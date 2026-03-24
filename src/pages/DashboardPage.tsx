@@ -1,20 +1,28 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const API = (import.meta.env.VITE_API_URL || 'https://anuratyres-backend-emm1774.vercel.app/api')
   .replace(/\/api$/, '');
 
 const GOLD = '#FFD700';
-const s = (base: React.CSSProperties) => base; // style helper
 
 interface PauseLog { reason: string; pausedAt: string; resumedAt: string | null; }
 interface TimerDoc { startedAt: string | null; stoppedAt: string | null; pauseLogs: PauseLog[]; }
 interface Job {
-  _id: string; service: string; vehiclePlate: string; customerName: string;
-  customerPhone: string; timeSlot: string; allocatedMins: number;
+  _id: string;
+  service: string;
+  vehiclePlate: string;
+  customerName: string;
+  customerPhone: string;
+  timeSlot: string;
+  allocatedMins: number;
   status: 'unassigned'|'assigned'|'in_progress'|'paused'|'done';
-  chainedFromJob: string|null; chainedToJob: string|null;
-  timer: TimerDoc|null; bookingRef: string; source: string;
+  chainedFromJob: string|null;
+  chainedToJob: string|null;
+  timer: TimerDoc|null;
+  bookingRef: string;
+  source: string;
+  staffId?: string; // <-  added staffId
 }
 
 const PAUSE_REASONS = [

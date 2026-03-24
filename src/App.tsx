@@ -1,4 +1,3 @@
-import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage }      from './pages/LoginPage';
 import { DashboardPage }  from './pages/DashboardPage';
@@ -21,11 +20,10 @@ function AppRouter() {
   }
 
   if (!user) return <LoginPage />;
+  
 
-  // Supervisors and super admins see the approval screen
   if (SUPERVISOR_ROLES.includes(user.role)) return <SupervisorPage />;
 
-  // Everyone else (mechanic, tyre_technician, etc.) sees their job list
   return <DashboardPage />;
 }
 

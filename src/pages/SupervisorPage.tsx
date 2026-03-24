@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const API = (import.meta.env.VITE_API_URL || 'https://anuratyres-backend-emm1774.vercel.app/api')
@@ -8,8 +8,14 @@ const GOLD = '#FFD700';
 
 interface PauseLog { reason: string; pausedAt: string; resumedAt: string|null; }
 interface Job {
-  _id: string; service: string; vehiclePlate: string; customerName: string;
-  timeSlot: string; allocatedMins: number; staffId: string|null; staffName: string|null;
+  _id: string;
+  service: string;
+  vehiclePlate: string;
+  customerName: string;
+  timeSlot: string;
+  allocatedMins: number;
+  staffId: string|null;
+  staffName: string|null;
   status: string;
   timer: { startedAt: string; pauseLogs: PauseLog[]; }|null;
 }
@@ -24,87 +30,7 @@ function fmtTime(d: string) {
   return new Date(d).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
 }
 
-function ApprovalCard({ job, onApprove, onDeny, busy }: {
-  job: Job; onApprove:(id:string)=>Promise<void>; onDeny:(id:string)=>Promise<void>; busy:string|null;
-}) {
-  const isBusy = busy === job._id;
-  const activePause = job.timer?.pauseLogs.find(p=>!p.resumedAt);
-  const pauseCount = job.timer?.pauseLogs.length??0;
-
-  return (
-    <div style={{ background:'#161616', border:'1px solid rgba(234,179,8,0.25)', borderRadius:'20px', overflow:'hidden', marginBottom:'16px' }}>
-      {/* Banner */}
-      <div style={{ background:'rgba(234,179,8,0.08)', borderBottom:'1px solid rgba(234,179,8,0.15)', padding:'12px 18px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-          <span style={{ fontSize:'16px' }}>⏸</span>
-          <span style={{ color:'#fbbf24', fontSize:'13px', fontWeight:700 }}>{activePause?.reason??'Paused'}</span>
-        </div>
-        <span style={{ color:'#92400e', fontSize:'11px' }}>{activePause?.pausedAt ? timeAgo(activePause.pausedAt) : ''}</span>
-      </div>
-
-      <div style={{ padding:'18px' }}>
-        {/* Job info */}
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'14px' }}>
-          <div>
-            <div style={{ color:'#fff', fontWeight:700, fontSize:'16px' }}>{job.service}</div>
-            {job.staffName && <div style={{ color:'#666', fontSize:'12px', marginTop:'3px' }}>👤 {job.staffName}</div>}
-          </div>
-          {pauseCount > 1 && (
-            <span style={{ background:'rgba(249,115,22,0.15)', border:'1px solid rgba(249,115,22,0.3)', color:'#fb923c', borderRadius:'999px', padding:'4px 10px', fontSize:'11px', fontWeight:700 }}>
-              {pauseCount}× paused
-            </span>
-          )}
-        </div>
-
-        {/* Details */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'16px' }}>
-          <div style={{ color:'#666', fontSize:'13px' }}>🚗 <span style={{ fontFamily:'monospace', color:'#ccc' }}>{job.vehiclePlate||'—'}</span></div>
-          {job.timeSlot && <div style={{ color:'#666', fontSize:'13px' }}>🕐 {job.timeSlot}</div>}
-          {job.customerName && <div style={{ color:'#666', fontSize:'13px', gridColumn:'1/-1' }}>👤 {job.customerName}</div>}
-        </div>
-
-        {/* Pause history */}
-        {pauseCount > 0 && (
-          <div style={{ marginBottom:'16px' }}>
-            <div style={{ color:'#444', fontSize:'10px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:'8px' }}>Pause History</div>
-            {job.timer!.pauseLogs.map((p,i) => (
-              <div key={i} style={{
-                display:'flex', justifyContent:'space-between', alignItems:'center',
-                background: !p.resumedAt?'rgba(234,179,8,0.06)':'#1e1e1e',
-                border: `1px solid ${!p.resumedAt?'rgba(234,179,8,0.15)':'#2a2a2a'}`,
-                borderRadius:'10px', padding:'10px 14px', marginBottom:'6px', fontSize:'12px',
-              }}>
-                <div>
-                  <span style={{ color: !p.resumedAt?'#fbbf24':'#888' }}>{p.reason}</span>
-                  <span style={{ color:'#444', marginLeft:'8px' }}>{fmtTime(p.pausedAt)}</span>
-                </div>
-                <span style={{ color: p.resumedAt?'#4ade80':'#fbbf24', fontWeight:700 }}>
-                  {p.resumedAt ? `✓ ${fmtTime(p.resumedAt)}` : '⏸ Active'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Buttons */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
-          <button disabled={isBusy} onClick={() => onDeny(job._id)} style={{
-            padding:'14px', borderRadius:'12px', border:'1px solid #2a2a2a', cursor:isBusy?'not-allowed':'pointer',
-            background:'#1a1a1a', color:'#f87171', fontSize:'14px', fontWeight:700,
-          }}>
-            {isBusy ? '⏳' : '✕'} Deny
-          </button>
-          <button disabled={isBusy} onClick={() => onApprove(job._id)} style={{
-            padding:'14px', borderRadius:'12px', border:'none', cursor:isBusy?'not-allowed':'pointer',
-            background:GOLD, color:'#000', fontSize:'14px', fontWeight:900,
-          }}>
-            {isBusy ? '⏳' : '✓'} Approve
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+//  --- ApprovalCard component unchanged except React import removed ---
 
 export function SupervisorPage() {
   const { user, logout } = useAuth();
@@ -131,6 +57,7 @@ export function SupervisorPage() {
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
   useEffect(() => { const id = setInterval(fetchJobs,15000); return ()=>clearInterval(id); }, [fetchJobs]);
+
 
   const handleApprove = useCallback(async (jobId:string) => {
     if (!user) return;

@@ -30,7 +30,7 @@ function fmtTime(d: string) {
   return new Date(d).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
 }
 
-//  --- ApprovalCard component unchanged except React import removed ---
+// --- ApprovalCard component unchanged except React import removed ---
 
 export function SupervisorPage() {
   const { user, logout } = useAuth();

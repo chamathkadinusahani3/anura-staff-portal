@@ -53,7 +53,7 @@ export function LoginPage() {
           </p>
         </div>
 
-        {/* Card */}
+        {/* Card  */}
         <div style={{
           background: '#161616', border: '1px solid #242424',
           borderRadius: '20px', padding: '32px', boxShadow: '0 24px 48px rgba(0,0,0,0.5)',

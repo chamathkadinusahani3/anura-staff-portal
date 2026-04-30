@@ -751,7 +751,7 @@ export function DashboardPage() {
         </div>
       </header>
 
-      {/* ── DATE BAR ───────────────────────────────────────────────────────── */}
+      {/* ── DATE BAR ────────────────────────────────────────────────── */}
       <div style={{ background: '#111', borderBottom: '1px solid #1a1a1a', padding: '10px 20px', textAlign: 'center' }}>
         <span style={{ color: '#555', fontSize: '13px' }}>
           {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}

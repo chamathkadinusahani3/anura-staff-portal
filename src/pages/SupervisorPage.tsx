@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const API = (import.meta.env.VITE_API_URL || 'https://anuratyres-backend-emm1774.vercel.app/api')
@@ -15,21 +15,22 @@ interface Job {
 }
 
 function timeAgo(d: string) {
-  const s = Math.floor((Date.now()-new Date(d).getTime())/1000);
-  if (s<60) return `${s}s ago`;
-  if (s<3600) return `${Math.floor(s/60)}m ago`;
+  const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
   return `${Math.floor(s/3600)}h ago`;
 }
 function fmtTime(d: string) {
   return new Date(d).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
 }
 
+// ApprovalCard component
 function ApprovalCard({ job, onApprove, onDeny, busy }: {
   job: Job; onApprove:(id:string)=>Promise<void>; onDeny:(id:string)=>Promise<void>; busy:string|null;
 }) {
   const isBusy = busy === job._id;
-  const activePause = job.timer?.pauseLogs.find(p=>!p.resumedAt);
-  const pauseCount = job.timer?.pauseLogs.length??0;
+  const activePause = job.timer?.pauseLogs.find((p: PauseLog) => !p.resumedAt);
+  const pauseCount = job.timer?.pauseLogs.length ?? 0;
 
   return (
     <div style={{ background:'#161616', border:'1px solid rgba(234,179,8,0.25)', borderRadius:'20px', overflow:'hidden', marginBottom:'16px' }}>
@@ -37,7 +38,7 @@ function ApprovalCard({ job, onApprove, onDeny, busy }: {
       <div style={{ background:'rgba(234,179,8,0.08)', borderBottom:'1px solid rgba(234,179,8,0.15)', padding:'12px 18px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
           <span style={{ fontSize:'16px' }}>⏸</span>
-          <span style={{ color:'#fbbf24', fontSize:'13px', fontWeight:700 }}>{activePause?.reason??'Paused'}</span>
+          <span style={{ color:'#fbbf24', fontSize:'13px', fontWeight:700 }}>{activePause?.reason ?? 'Paused'}</span>
         </div>
         <span style={{ color:'#92400e', fontSize:'11px' }}>{activePause?.pausedAt ? timeAgo(activePause.pausedAt) : ''}</span>
       </div>
@@ -67,7 +68,7 @@ function ApprovalCard({ job, onApprove, onDeny, busy }: {
         {pauseCount > 0 && (
           <div style={{ marginBottom:'16px' }}>
             <div style={{ color:'#444', fontSize:'10px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:'8px' }}>Pause History</div>
-            {job.timer!.pauseLogs.map((p,i) => (
+            {job.timer!.pauseLogs.map((p: PauseLog, i: number) => (
               <div key={i} style={{
                 display:'flex', justifyContent:'space-between', alignItems:'center',
                 background: !p.resumedAt?'rgba(234,179,8,0.06)':'#1e1e1e',
@@ -109,6 +110,7 @@ function ApprovalCard({ job, onApprove, onDeny, busy }: {
 export function SupervisorPage() {
   const { user, logout } = useAuth();
   const today = new Date().toISOString().split('T')[0];
+
   const [tab, setTab] = useState<'approvals'|'all'>('approvals');
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,7 +144,7 @@ export function SupervisorPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error||'Approval failed');
-      setApprovedIds(prev => new Set([...prev, jobId]));
+      setApprovedIds((prev: Set<string>) => new Set([...prev, jobId]));
       await fetchJobs();
     } catch(err:any) { setError(err.message); }
     finally { setActionLoading(null); }
@@ -157,16 +159,18 @@ export function SupervisorPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error||'Deny failed');
-      setDeniedIds(prev => new Set([...prev, jobId]));
+      setDeniedIds((prev: Set<string>) => new Set([...prev, jobId]));
       await fetchJobs();
     } catch(err:any) { setError(err.message); }
     finally { setActionLoading(null); }
   }, [fetchJobs]);
 
-  const pendingApprovals = jobs.filter(j => j.status==='paused' && !approvedIds.has(j._id) && !deniedIds.has(j._id));
-  const inProgress = jobs.filter(j=>j.status==='in_progress').length;
-  const paused = jobs.filter(j=>j.status==='paused').length;
-  const done = jobs.filter(j=>j.status==='done').length;
+  const pendingApprovals = jobs.filter((j: Job) => j.status==='paused' && !approvedIds.has(j._id) && !deniedIds.has(j._id));
+  const inProgress = jobs.filter((j: Job)=>j.status==='in_progress').length;
+  const paused = jobs.filter((j: Job)=>j.status==='paused').length;
+  const done = jobs.filter((j: Job)=>j.status==='done').length;
+
+
 
   return (
     <div style={{ minHeight:'100vh', background:'#0a0a0a', fontFamily:'system-ui,-apple-system,sans-serif' }}>

@@ -1,89 +1,53 @@
+/**
+ * DashboardPage.tsx
+ * Self-contained staff portal — no external context needed.
+ * Drop this anywhere and render <StaffPortal />.
+ *
+ * Backend: https://anuratyres-backend-emm1774.vercel.app/api
+ *   POST /api/staff?action=login          → { token, staff }
+ *   GET  /api/jobs?branch=X&date=Y        → Job[]
+ *   POST /api/jobs?resource=timer         → { jobId, staffId, action, ...extra }
+ *   GET  /api/staff?resource=leave&staffId=X   → Leave[]
+ *   GET  /api/staff?resource=leave&branch=X    → Leave[]
+ *   POST /api/staff?resource=leave&action=submit  → Leave
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { StaffDamageInspectionPage } from './StaffDamageInspectionPage';
 import { useAuth } from '../context/AuthContext';
-import { Calendar } from 'lucide-react';
 
-const API = (import.meta.env.VITE_API_URL || 'https://anuratyres-backend-emm1774.vercel.app/api')
-  .replace(/\/api$/, '');
+// ─── Config ──────────────────────────────────────────────────────────────────
+const API = (
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) ||
+  'https://anuratyres-backend-emm1774.vercel.app/api'
+).replace(/\/api$/, '');
 
-const GOLD = '#FFD700';
+const G = '#FFD700'; // gold
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type LeaveType = 'Annual Leave' | 'Sick Leave' | 'Break Request' | 'Tomorrow Off';
+interface AuthUser { id: string; name: string; role: string; branch: string; username: string; token: string; }
+
+type LeaveType   = 'Annual Leave' | 'Sick Leave' | 'Break Request' | 'Tomorrow Off';
 type LeaveStatus = 'Pending' | 'Approved' | 'Denied';
+interface Leave { id: string; staffId: string; staffName: string; type: LeaveType; date: string; reason: string; status: LeaveStatus; createdAt: string; }
 
-interface LeaveRequest {
-  id: number;
-  staffId: number;
-  staffName: string;
-  type: LeaveType;
-  date: string;
-  reason: string;
-  status: LeaveStatus;
-  createdAt: string;
-}
-
-interface PauseLog { reason: string; pausedAt: string; resumedAt: string | null; }
-interface TimerDoc { startedAt: string | null; stoppedAt: string | null; pauseLogs: PauseLog[]; }
+interface PauseLog   { reason: string; pausedAt: string; resumedAt: string | null; }
+interface TimerDoc   { startedAt: string | null; stoppedAt: string | null; pauseLogs: PauseLog[]; }
 interface Job {
-  _id: string;
-  service: string;
-  vehiclePlate: string;
-  customerName: string;
-  customerPhone: string;
-  timeSlot: string;
-  allocatedMins: number;
+  _id: string; service: string; vehiclePlate: string; customerName: string;
+  customerPhone: string; timeSlot: string; allocatedMins: number;
   status: 'unassigned' | 'assigned' | 'in_progress' | 'paused' | 'done' | 'terminated';
-  chainedFromJob: string | null;
-  chainedToJob: string | null;
-  timer: TimerDoc | null;
-  bookingRef: string;
-  source: string;
-  staffId?: string;
+  timer: TimerDoc | null; bookingRef: string; source: string; staffId?: string;
 }
 
-// ─── Leave helpers ────────────────────────────────────────────────────────────
-function todayStr() { return new Date().toISOString().split('T')[0]; }
-function tomorrowStr() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; }
-function fmtDate(d: string) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const todayStr    = () => new Date().toISOString().split('T')[0];
+const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; };
+const fmtDate     = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const fmtTime     = (d: string) => d ? new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—';
 
-function leaveTypeIcon(type: LeaveType) {
-  if (type === 'Break Request') return '☕';
-  if (type === 'Sick Leave')    return '🏥';
-  if (type === 'Tomorrow Off')  return '⚠️';
-  return '📅';
-}
-
-function leaveStatusStyle(status: LeaveStatus): React.CSSProperties {
-  if (status === 'Approved') return { background: 'rgba(34,197,94,.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,.3)' };
-  if (status === 'Denied')   return { background: 'rgba(239,68,68,.15)',  color: '#f87171', border: '1px solid rgba(239,68,68,.3)' };
-  return { background: 'rgba(251,191,36,.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,.3)' };
-}
-
-// ─── Job helpers ──────────────────────────────────────────────────────────────
-const PAUSE_REASONS = [
-  'Fetching tyres / tools', 'On break', 'Waiting for parts',
-  'Customer query', 'Equipment issue', 'Supervisor needed', 'Other',
-];
-
-const STOP_REASONS = [
-  { label: 'Completed',      icon: '✅', accent: { bg: 'rgba(34,197,94,0.15)',  border: 'rgba(34,197,94,0.5)',   color: '#4ade80' } },
-  { label: 'Terminate',      icon: '⏹', accent: { bg: 'rgba(239,68,68,0.15)',  border: 'rgba(239,68,68,0.5)',   color: '#f87171' } },
-  { label: 'Stock issue',    icon: '📦', accent: { bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.45)', color: '#fbbf24' } },
-  { label: 'Price disagree', icon: '💬', accent: { bg: 'rgba(96,165,250,0.10)', border: 'rgba(96,165,250,0.4)',  color: '#60a5fa' } },
-];
-
-function fmtCountdown(secs: number) {
-  const abs = Math.abs(secs);
-  const m   = String(Math.floor(abs / 60)).padStart(2, '0');
-  const sc  = String(abs % 60).padStart(2, '0');
-  return `${secs < 0 ? '-' : ''}${m}:${sc}`;
-}
-
-function computeRemaining(timer: TimerDoc | null, allocatedMins: number, nowMs: number) {
-  if (!timer?.startedAt) return allocatedMins * 60;
+function computeRemaining(timer: TimerDoc | null, allocMins: number, nowMs: number) {
+  if (!timer?.startedAt) return allocMins * 60;
   if (timer.stoppedAt)   return 0;
   const elapsed = Math.floor((nowMs - new Date(timer.startedAt).getTime()) / 1000);
   let paused = 0;
@@ -91,14 +55,21 @@ function computeRemaining(timer: TimerDoc | null, allocatedMins: number, nowMs: 
     const end = p.resumedAt ? new Date(p.resumedAt).getTime() : nowMs;
     paused += Math.floor((end - new Date(p.pausedAt).getTime()) / 1000);
   }
-  return allocatedMins * 60 - (elapsed - paused);
+  return allocMins * 60 - (elapsed - paused);
 }
 
-function minsUntilSlot(timeSlot: string): number | null {
-  if (!timeSlot) return null;
-  const [h, m] = timeSlot.split(':').map(Number);
-  const slot = new Date(); slot.setHours(h, m, 0, 0);
-  return Math.round((slot.getTime() - Date.now()) / 60000);
+function fmtCountdown(s: number) {
+  const abs = Math.abs(s);
+  const m   = String(Math.floor(abs / 60)).padStart(2, '0');
+  const sc  = String(abs % 60).padStart(2, '0');
+  return `${s < 0 ? '-' : ''}${m}:${sc}`;
+}
+
+function minsUntilSlot(slot: string): number | null {
+  if (!slot) return null;
+  const [h, m] = slot.split(':').map(Number);
+  const t = new Date(); t.setHours(h, m, 0, 0);
+  return Math.round((t.getTime() - Date.now()) / 60000);
 }
 
 function useNow() {
@@ -107,242 +78,180 @@ function useNow() {
   return now;
 }
 
+async function apiFetch(path: string, opts?: RequestInit, token?: string) {
+  const res  = await fetch(`${API}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    ...opts,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as any).error || `Request failed (${res.status})`);
+  return data;
+}
+
+// ─── Storage ──────────────────────────────────────────────────────────────────
+const LS_KEY = 'anurat_staff_auth';
+function saveAuth(u: AuthUser) { try { localStorage.setItem(LS_KEY, JSON.stringify(u)); } catch {} }
+function loadAuth(): AuthUser | null { try { const v = localStorage.getItem(LS_KEY); return v ? JSON.parse(v) : null; } catch { return null; } }
+function clearAuth() { try { localStorage.removeItem(LS_KEY); } catch {} }
+
 // ─────────────────────────────────────────────────────────────────────────────
-// LEAVE / BREAK SHEET
+// LOGIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-function LeaveSheet({ onClose, myLeaves, allLeaves, onSubmit }: {
-  onClose: () => void;
-  myLeaves: LeaveRequest[];
-  allLeaves: LeaveRequest[];
-  onSubmit: (req: Omit<LeaveRequest, 'id' | 'createdAt'>) => void;
-}) {
-  const { user } = useAuth();
-  const [tab,        setTab]        = useState<'request' | 'history' | 'all'>('request');
-  const [leaveType,  setLeaveType]  = useState<LeaveType>('Break Request');
-  const [leaveDate,  setLeaveDate]  = useState(todayStr());
-  const [leaveReason,setLeaveReason]= useState('');
-  const [submitted,  setSubmitted]  = useState(false);
-  const [allFilter,  setAllFilter]  = useState<'all' | 'sick' | 'leave'>('all');
+function LoginScreen({ onLogin }: { onLogin: (u: AuthUser) => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
 
-  const selectType = (t: LeaveType) => {
-    setLeaveType(t);
-    if (t === 'Tomorrow Off') setLeaveDate(tomorrowStr());
-    else if (t !== 'Break Request') setLeaveDate(todayStr());
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.trim() || !password) return setError('Enter your username and password');
+    setError(''); setLoading(true);
+    try {
+      const data: any = await apiFetch('/api/staff?action=login', {
+        method: 'POST',
+        body: JSON.stringify({ username: username.trim().toLowerCase(), password }),
+      });
+      const user: AuthUser = {
+        id:       String(data.staff?.id || data.staff?._id),
+        name:     data.staff?.name     || '',
+        role:     data.staff?.role     || '',
+        branch:   data.staff?.branch   || '',
+        username: data.staff?.username || username.trim().toLowerCase(),
+        token:    data.token,
+      };
+      saveAuth(user);
+      onLogin(user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const submit = () => {
-    onSubmit({
-      staffId: Number(user?.id ?? 0),
-      staffName: user?.name ?? '',
-      type: leaveType,
-      date: leaveType === 'Break Request' ? todayStr() : leaveDate,
-      reason: leaveReason.trim(),
-      status: 'Pending',
-    });
-    setLeaveReason('');
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
-  };
-
-  const filteredAll = allLeaves.filter(r =>
-    allFilter === 'all' ||
-    (allFilter === 'sick'  && r.type === 'Sick Leave') ||
-    (allFilter === 'leave' && (r.type === 'Annual Leave' || r.type === 'Tomorrow Off'))
-  );
-
-  const tabStyle = (k: string): React.CSSProperties => ({
-    flex: 1, padding: '7px', borderRadius: 10, border: 'none', cursor: 'pointer',
-    fontSize: 12, fontWeight: 700,
-    background: tab === k ? GOLD : 'none',
-    color: tab === k ? '#000' : '#555',
-    transition: 'all .15s',
-  });
-
-  const typeBtn = (t: LeaveType): React.CSSProperties => ({
-    width: '100%', padding: '13px 14px', borderRadius: 12, cursor: 'pointer',
-    fontSize: 14, fontWeight: 700, marginBottom: 8, textAlign: 'left',
-    display: 'flex', alignItems: 'center', gap: 10,
-    background: leaveType === t ? 'rgba(255,215,0,.08)' : 'rgba(255,255,255,.03)',
-    border: leaveType === t ? '2px solid rgba(255,215,0,.5)' : '2px solid #2a2a2a',
-    color: leaveType === t ? GOLD : '#666',
-    transition: 'all .15s',
-  });
-
-  const filterBtn = (f: string): React.CSSProperties => ({
-    padding: '5px 12px', borderRadius: 8,
-    border: `1px solid ${allFilter === f ? GOLD : '#2a2a2a'}`,
-    background: 'none',
-    color: allFilter === f ? GOLD : '#666',
-    fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
-  });
 
   return (
-    <div
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 300,
-               display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{ background: '#161616', border: '1px solid #2a2a2a', borderRadius: '24px 24px 0 0',
-                 padding: '24px 20px', width: '100%', maxWidth: 600,
-                 maxHeight: '85vh', overflowY: 'auto' }}
-      >
-        {/* Handle */}
-        <div style={{ width: 36, height: 4, background: '#2a2a2a', borderRadius: 2, margin: '0 auto 20px' }} />
+    <div style={{
+      minHeight: '100dvh', background: '#080808',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '20px', fontFamily: "'DM Sans', system-ui, sans-serif",
+    }}>
+      <div style={{
+        position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '600px', height: '300px', borderRadius: '0 0 300px 300px',
+        background: 'radial-gradient(ellipse, rgba(255,215,0,0.06) 0%, transparent 70%)',
+        pointerEvents: 'none',
+      }} />
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>My Leave &amp; Breaks</div>
-          <button onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 18 }}>✕</button>
+      <div style={{ width: '100%', maxWidth: '380px', position: 'relative', zIndex: 1 }}>
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: '64px', height: '64px', borderRadius: '20px',
+            background: 'linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,215,0,0.05))',
+            border: '1px solid rgba(255,215,0,0.2)', marginBottom: '16px',
+            boxShadow: '0 0 40px rgba(255,215,0,0.08)',
+          }}>
+            <span style={{ fontSize: '28px' }}>🔧</span>
+          </div>
+          <div style={{ color: '#fff', fontSize: '22px', fontWeight: 900, letterSpacing: '-0.02em' }}>Anurat Tyres</div>
+          <div style={{ color: '#444', fontSize: '13px', marginTop: '4px', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600 }}>Staff Portal</div>
         </div>
 
-        {/* Tab bar */}
-        <div style={{ display: 'flex', gap: 4, background: '#111', border: '1px solid #1e1e1e',
-                      borderRadius: 12, padding: 4, marginBottom: 18 }}>
-          <button style={tabStyle('request')} onClick={() => setTab('request')}>Request</button>
-          <button style={tabStyle('history')} onClick={() => setTab('history')}>My History</button>
-          <button style={tabStyle('all')}     onClick={() => setTab('all')}>All Leaves</button>
-        </div>
+        <div style={{
+          background: '#111', border: '1px solid #1e1e1e', borderRadius: '24px',
+          padding: '32px 28px', boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+        }}>
+          <div style={{ color: '#fff', fontSize: '17px', fontWeight: 800, marginBottom: '6px' }}>Welcome back</div>
+          <div style={{ color: '#444', fontSize: '13px', marginBottom: '28px' }}>Sign in with your staff credentials</div>
 
-        {/* ── REQUEST ── */}
-        {tab === 'request' && (
-          <div>
-            {(['Break Request', 'Annual Leave', 'Sick Leave', 'Tomorrow Off'] as LeaveType[]).map(t => (
-              <button key={t} style={typeBtn(t)} onClick={() => selectType(t)}>
-                <span style={{ fontSize: 16 }}>{leaveTypeIcon(t)}</span> {t}
-              </button>
-            ))}
+          {error && (
+            <div style={{
+              padding: '12px 14px', marginBottom: '18px',
+              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+              borderRadius: '12px', color: '#f87171', fontSize: '13px', fontWeight: 600,
+            }}>⚠ {error}</div>
+          )}
 
-            {leaveType !== 'Break Request' && (
-              <div style={{ margin: '8px 0 14px' }}>
-                <div style={{ color: '#555', fontSize: 11, fontWeight: 700,
-                              textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
-                  Date
-                </div>
-                <input type="date" value={leaveDate}
-                  readOnly={leaveType === 'Tomorrow Off'}
-                  onChange={e => setLeaveDate(e.target.value)}
-                  style={{ width: '100%', background: '#111', border: '1px solid #2a2a2a',
-                           borderRadius: 10, color: '#fff', padding: '8px 12px', fontSize: 13 }} />
-                {leaveType === 'Tomorrow Off' && (
-                  <div style={{ color: '#444', fontSize: 11, marginTop: 4 }}>Auto-set to tomorrow ({fmtDate(tomorrowStr())})</div>
-                )}
-              </div>
-            )}
-
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ color: '#555', fontSize: 11, fontWeight: 700,
-                            textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
-                Reason <span style={{ color: '#333', fontWeight: 400, textTransform: 'none' }}>(optional)</span>
-              </div>
-              <textarea value={leaveReason} onChange={e => setLeaveReason(e.target.value)} rows={2}
-                placeholder={
-                  leaveType === 'Sick Leave'    ? 'e.g. Fever and cold…' :
-                  leaveType === 'Break Request' ? 'e.g. 30 min lunch break…' :
-                  leaveType === 'Tomorrow Off'  ? 'e.g. Family commitment…' :
-                  'e.g. Annual vacation…'
-                }
-                style={{ width: '100%', background: '#111', border: '1px solid #2a2a2a', borderRadius: 10,
-                         color: '#fff', padding: '8px 12px', fontSize: 13, resize: 'none', fontFamily: 'inherit' }} />
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', color: '#555', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Username</label>
+              <input
+                value={username} onChange={e => setUsername(e.target.value)}
+                placeholder="e.g. saman.p" autoCapitalize="none" autoComplete="username"
+                style={{
+                  width: '100%', padding: '13px 14px', borderRadius: '12px', boxSizing: 'border-box',
+                  background: '#0d0d0d', border: '1px solid #2a2a2a', color: '#fff',
+                  fontSize: '15px', outline: 'none', transition: 'border-color 0.15s', fontFamily: 'inherit',
+                }}
+                onFocus={e => (e.target.style.borderColor = G)}
+                onBlur={e  => (e.target.style.borderColor = '#2a2a2a')}
+              />
             </div>
 
-            <button onClick={submit}
-              style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', cursor: 'pointer',
-                       background: GOLD, color: '#000', fontSize: 15, fontWeight: 900 }}>
-              Submit Request
-            </button>
-
-            {submitted && (
-              <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(34,197,94,.08)',
-                            border: '1px solid rgba(34,197,94,.2)', borderRadius: 10,
-                            color: '#4ade80', fontSize: 13, fontWeight: 700 }}>
-                ✓ Request submitted — awaiting approval
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── MY HISTORY ── */}
-        {tab === 'history' && (
-          <div>
-            {myLeaves.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: '#444', fontSize: 13 }}>No requests yet</div>
-            ) : myLeaves.map(r => (
-              <div key={r.id} style={{ background: '#1e1e1e', border: '1px solid #2a2a2a',
-                                       borderRadius: 14, padding: '12px 14px', marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 700, color: '#fff' }}>
-                    <span style={{ fontSize: 15 }}>{leaveTypeIcon(r.type)}</span> {r.type}
-                  </div>
-                  <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-                                 ...leaveStatusStyle(r.status) }}>
-                    {r.status}
-                  </span>
-                </div>
-                {r.type !== 'Break Request' && (
-                  <div style={{ color: '#555', fontSize: 11 }}>📅 {fmtDate(r.date)}</div>
-                )}
-                <div style={{ color: '#555', fontSize: 11, marginTop: 2 }}>
-                  Submitted {fmtDate(r.createdAt)}
-                </div>
-                {r.reason && (
-                  <div style={{ color: '#666', fontSize: 12, marginTop: 5, fontStyle: 'italic' }}>"{r.reason}"</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── ALL LEAVES ── */}
-        {tab === 'all' && (
-          <div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-              {(['all', 'sick', 'leave'] as const).map(f => (
-                <button key={f} onClick={() => setAllFilter(f)} style={filterBtn(f)}>
-                  {f === 'all' ? 'All' : f === 'sick' ? 'Sick Leave' : 'Annual / Tomorrow'}
+            <div>
+              <label style={{ display: 'block', color: '#555', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Password</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={password} onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••" autoComplete="current-password"
+                  style={{
+                    width: '100%', padding: '13px 44px 13px 14px', borderRadius: '12px', boxSizing: 'border-box',
+                    background: '#0d0d0d', border: '1px solid #2a2a2a', color: '#fff',
+                    fontSize: '15px', outline: 'none', transition: 'border-color 0.15s', fontFamily: 'inherit',
+                  }}
+                  onFocus={e => (e.target.style.borderColor = G)}
+                  onBlur={e  => (e.target.style.borderColor = '#2a2a2a')}
+                />
+                <button type="button" onClick={() => setShowPass(v => !v)} style={{
+                  position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: '#444',
+                  fontSize: '16px', lineHeight: 1, padding: '4px',
+                }}>
+                  {showPass ? '🙈' : '👁'}
                 </button>
-              ))}
-            </div>
-            {filteredAll.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: '#444', fontSize: 13 }}>No records found</div>
-            ) : filteredAll.map(r => (
-              <div key={r.id} style={{ background: '#1e1e1e', border: '1px solid #2a2a2a',
-                                       borderRadius: 14, padding: '12px 14px', marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%',
-                                  background: 'rgba(255,215,0,.1)', border: '1px solid rgba(255,215,0,.2)',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  color: GOLD, fontSize: 10, fontWeight: 700 }}>
-                      {r.staffName.split(' ').map(n => n[0]).join('')}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{r.staffName}</div>
-                      <div style={{ fontSize: 11, color: '#555' }}>
-                        {r.type} {r.type !== 'Break Request' ? `· ${fmtDate(r.date)}` : ''}
-                      </div>
-                    </div>
-                  </div>
-                  <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-                                 ...leaveStatusStyle(r.status) }}>
-                    {r.status}
-                  </span>
-                </div>
-                {r.reason && (
-                  <div style={{ color: '#555', fontSize: 12, marginTop: 8, paddingTop: 8,
-                                borderTop: '1px solid #1e1e1e', fontStyle: 'italic' }}>
-                    "{r.reason}"
-                  </div>
-                )}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+
+            <button type="submit" disabled={loading} style={{
+              marginTop: '8px', width: '100%', padding: '15px',
+              borderRadius: '14px', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+              background: loading ? 'rgba(255,215,0,0.4)' : G,
+              color: '#000', fontSize: '15px', fontWeight: 900,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              transition: 'all 0.15s', fontFamily: 'inherit',
+            }}>
+              {loading
+                ? <><div style={{ width: '16px', height: '16px', border: '2px solid rgba(0,0,0,0.2)', borderTopColor: '#000', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Signing in…</>
+                : '→ Sign In'}
+            </button>
+          </form>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: '24px', color: '#2a2a2a', fontSize: '12px' }}>
+          Contact your manager if you've forgotten your credentials
+        </div>
       </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAUSE / STOP REASONS
+// ─────────────────────────────────────────────────────────────────────────────
+const PAUSE_REASONS = [
+  'Fetching tyres / tools', 'On break', 'Waiting for parts',
+  'Customer query', 'Equipment issue', 'Supervisor needed', 'Other',
+];
+const STOP_REASONS = [
+  { label: 'Completed',      icon: '✅', col: '#4ade80', bg: 'rgba(34,197,94,0.12)',  bd: 'rgba(34,197,94,0.4)' },
+  { label: 'Terminate',      icon: '⏹', col: '#f87171', bg: 'rgba(239,68,68,0.12)',  bd: 'rgba(239,68,68,0.4)' },
+  { label: 'Stock issue',    icon: '📦', col: '#fbbf24', bg: 'rgba(251,191,36,0.10)', bd: 'rgba(251,191,36,0.4)' },
+  { label: 'Price disagree', icon: '💬', col: '#60a5fa', bg: 'rgba(96,165,250,0.08)', bd: 'rgba(96,165,250,0.35)' },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JOB CARD
@@ -351,10 +260,10 @@ function JobCard({ job, now, onAction, busy, onRequestStop }: {
   job: Job; now: number;
   onAction: (id: string, action: string, extra?: Record<string, string>) => Promise<void>;
   busy: string | null;
-  onRequestStop: (jobId: string) => void;
+  onRequestStop: (id: string) => void;
 }) {
-  const [showReasons, setShowReasons] = useState(false);
-  const [expanded,    setExpanded]    = useState(false);
+  const [showPause, setShowPause] = useState(false);
+  const [showLog,   setShowLog]   = useState(false);
 
   const isBusy     = busy === job._id;
   const isRunning  = job.status === 'in_progress';
@@ -369,158 +278,150 @@ function JobCard({ job, now, onAction, busy, onRequestStop }: {
   const alertNow   = minsAway !== null && minsAway <= 0 && minsAway > -30 && isAssigned;
   const activePause = job.timer?.pauseLogs.find(p => !p.resumedAt);
 
-  const borderColor = isDone ? '#222' : isOvertime ? '#7f1d1d' : isPaused ? '#78350f' : isRunning ? '#14532d' : alertNow ? '#7c2d12' : alertSoon ? '#713f12' : '#222';
-  const bgColor     = isDone ? '#111' : isOvertime ? 'rgba(239,68,68,0.04)' : isPaused ? 'rgba(234,179,8,0.04)' : isRunning ? 'rgba(34,197,94,0.04)' : '#161616';
+  const borderCol = isDone ? '#1a1a1a' : isOvertime ? '#7f1d1d' : isPaused ? '#78350f' : isRunning ? '#14532d' : alertNow ? '#7c2d12' : alertSoon ? '#713f12' : '#1e1e1e';
+  const bgCol     = isDone ? '#0d0d0d' : isOvertime ? 'rgba(239,68,68,0.04)' : isPaused ? 'rgba(234,179,8,0.04)' : isRunning ? 'rgba(34,197,94,0.04)' : '#111';
+
+  const statusLabel = isDone ? (job.status === 'terminated' ? 'Terminated' : 'Done')
+    : isOvertime ? 'Overtime' : isPaused ? 'Paused' : isRunning ? 'In Progress' : 'Assigned';
+  const statusColor = isDone ? '#555' : isOvertime ? '#f87171' : isPaused ? '#fbbf24' : isRunning ? '#4ade80' : '#60a5fa';
+  const statusBg    = isDone ? 'rgba(255,255,255,0.04)' : isOvertime ? 'rgba(239,68,68,0.12)' : isPaused ? 'rgba(234,179,8,0.12)' : isRunning ? 'rgba(34,197,94,0.12)' : 'rgba(96,165,250,0.12)';
 
   return (
-    <div style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: '20px', marginBottom: '16px', opacity: isDone ? 0.65 : 1 }}>
+    <div style={{ background: bgCol, border: `1px solid ${borderCol}`, borderRadius: '20px', marginBottom: '14px', overflow: 'hidden', opacity: isDone ? 0.65 : 1, transition: 'all 0.2s' }}>
       {alertSoon && !alertNow && (
-        <div style={{ background: 'rgba(255,215,0,0.1)', borderBottom: '1px solid rgba(255,215,0,0.2)', padding: '10px 16px', borderRadius: '20px 20px 0 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '16px' }}>🔔</span>
-          <span style={{ color: GOLD, fontSize: '13px', fontWeight: 700 }}>Starting in {minsAway} min — get ready</span>
+        <div style={{ background: 'rgba(255,215,0,0.08)', borderBottom: '1px solid rgba(255,215,0,0.15)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>🔔</span>
+          <span style={{ color: G, fontSize: '13px', fontWeight: 700 }}>Starting in {minsAway} min — get ready</span>
         </div>
       )}
       {alertNow && (
-        <div style={{ background: 'rgba(249,115,22,0.12)', borderBottom: '1px solid rgba(249,115,22,0.3)', padding: '10px 16px', borderRadius: '20px 20px 0 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '16px' }}>⚠️</span>
-          <span style={{ color: '#fb923c', fontSize: '13px', fontWeight: 700 }}>This job should be starting now!</span>
-        </div>
-      )}
-      {job.chainedFromJob && (
-        <div style={{ background: 'rgba(59,130,246,0.08)', borderBottom: '1px solid rgba(59,130,246,0.15)', padding: '8px 16px' }}>
-          <span style={{ color: '#60a5fa', fontSize: '11px', fontWeight: 700 }}>🔗 Continues from previous job</span>
+        <div style={{ background: 'rgba(249,115,22,0.1)', borderBottom: '1px solid rgba(249,115,22,0.25)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>⚠️</span>
+          <span style={{ color: '#fb923c', fontSize: '13px', fontWeight: 700 }}>Job should be starting now!</span>
         </div>
       )}
 
-      <div style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' }}>
+      <div style={{ padding: '18px 18px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ color: '#fff', fontSize: '18px', fontWeight: 900, lineHeight: 1.2, marginBottom: '4px' }}>{job.service}</div>
-            {job.bookingRef && <div style={{ color: 'rgba(255,215,0,0.5)', fontSize: '11px', fontFamily: 'monospace' }}>{job.bookingRef}</div>}
+            <div style={{ color: '#fff', fontSize: '17px', fontWeight: 900, lineHeight: 1.25 }}>{job.service}</div>
+            {job.bookingRef && <div style={{ color: 'rgba(255,215,0,0.4)', fontSize: '10px', fontFamily: 'monospace', marginTop: '3px' }}>{job.bookingRef}</div>}
           </div>
-          <div style={{
-            padding: '5px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: 800, flexShrink: 0,
-            background: isDone ? '#1e1e1e' : isOvertime ? 'rgba(239,68,68,0.15)' : isPaused ? 'rgba(234,179,8,0.15)' : isRunning ? 'rgba(34,197,94,0.15)' : 'rgba(59,130,246,0.15)',
-            color: isDone ? '#555' : isOvertime ? '#f87171' : isPaused ? '#fbbf24' : isRunning ? '#4ade80' : '#60a5fa',
-            border: `1px solid ${isDone ? '#2a2a2a' : isOvertime ? 'rgba(239,68,68,0.3)' : isPaused ? 'rgba(234,179,8,0.3)' : isRunning ? 'rgba(34,197,94,0.3)' : 'rgba(59,130,246,0.3)'}`,
-          }}>
-            {isDone ? (job.status === 'terminated' ? 'Terminated' : 'Done') : isOvertime ? 'Overtime' : isPaused ? 'Paused' : isRunning ? 'In Progress' : 'Assigned'}
-          </div>
+          <span style={{ padding: '4px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: 800, flexShrink: 0, background: statusBg, color: statusColor, border: `1px solid ${statusColor}30` }}>
+            {statusLabel}
+          </span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#888', fontSize: '13px' }}>
-            <span>🚗</span> <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#ccc' }}>{job.vehiclePlate || '—'}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#777', fontSize: '13px' }}>
+            🚗 <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#ccc' }}>{job.vehiclePlate || '—'}</span>
           </div>
           {job.timeSlot && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#888', fontSize: '13px' }}>
-              <span>🕐</span> <span>{job.timeSlot}</span>
-            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#777', fontSize: '13px' }}>🕐 {job.timeSlot}</div>
           )}
           {job.customerName && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#888', fontSize: '13px', gridColumn: '1/-1' }}>
-              <span>👤</span> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.customerName}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#777', fontSize: '13px', gridColumn: '1/-1', overflow: 'hidden' }}>
+              👤 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#aaa' }}>{job.customerName}</span>
             </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#777', fontSize: '13px' }}>⏱ {job.allocatedMins} min allocated</div>
+          {job.timer?.startedAt && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#777', fontSize: '13px' }}>🟢 Started {fmtTime(job.timer.startedAt)}</div>
           )}
         </div>
 
         {isWorking && (
           <div style={{
-            borderRadius: '16px', padding: '20px', textAlign: 'center', marginBottom: '16px',
-            background: isOvertime ? 'rgba(239,68,68,0.08)' : isPaused ? 'rgba(234,179,8,0.08)' : 'rgba(34,197,94,0.08)',
+            borderRadius: '16px', padding: '20px 16px', textAlign: 'center', marginBottom: '16px',
+            background: isOvertime ? 'rgba(239,68,68,0.07)' : isPaused ? 'rgba(234,179,8,0.07)' : 'rgba(34,197,94,0.07)',
             border: `1px solid ${isOvertime ? 'rgba(239,68,68,0.2)' : isPaused ? 'rgba(234,179,8,0.2)' : 'rgba(34,197,94,0.2)'}`,
           }}>
-            <div style={{ fontSize: '52px', fontWeight: 900, fontFamily: 'monospace', lineHeight: 1, color: isOvertime ? '#f87171' : isPaused ? '#fbbf24' : '#4ade80' }}>
+            <div style={{ fontSize: '54px', fontWeight: 900, fontFamily: 'monospace', lineHeight: 1, letterSpacing: '-2px', color: isOvertime ? '#f87171' : isPaused ? '#fbbf24' : '#4ade80' }}>
               {fmtCountdown(remaining)}
             </div>
-            <div style={{ color: '#666', fontSize: '12px', marginTop: '6px' }}>
-              {isOvertime ? '⚠ Overtime' : isPaused ? '⏸ Paused — awaiting approval' : 'remaining'}
+            <div style={{ color: '#555', fontSize: '12px', marginTop: '6px' }}>
+              {isOvertime ? '⚠ Overtime running' : isPaused ? '⏸ Paused — timer stopped' : 'remaining'}
             </div>
-            <div style={{ color: '#444', fontSize: '11px', marginTop: '2px' }}>{job.allocatedMins} min allocated</div>
-          </div>
-        )}
-
-        {isAssigned && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#555', fontSize: '13px', marginBottom: '16px' }}>
-            ⏱ {job.allocatedMins} min allocated
           </div>
         )}
 
         {isPaused && activePause && (
-          <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px' }}>
-            <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '13px' }}>⏸ Waiting for supervisor approval</div>
-            <div style={{ color: '#92400e', fontSize: '12px', marginTop: '3px' }}>Reason: {activePause.reason}</div>
+          <div style={{ background: 'rgba(234,179,8,0.07)', border: '1px solid rgba(234,179,8,0.18)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px' }}>
+            <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '13px' }}>⏸ Paused — Reason:</div>
+            <div style={{ color: '#92400e', fontSize: '12px', marginTop: '3px' }}>{activePause.reason}</div>
           </div>
         )}
 
         {isDone && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 700, color: job.status === 'terminated' ? '#f87171' : '#4ade80' }}>
             {job.status === 'terminated' ? '🛑 Job terminated' : '✅ Job complete'}
+            {job.timer?.stoppedAt && <span style={{ color: '#444', fontWeight: 400, fontSize: '12px' }}>at {fmtTime(job.timer.stoppedAt)}</span>}
           </div>
         )}
 
-        {!isDone && !showReasons && (
+        {!isDone && !showPause && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {isAssigned && (
               <button disabled={isBusy} onClick={() => onAction(job._id, 'start')} style={{
-                width: '100%', padding: '16px', borderRadius: '14px', border: 'none', cursor: isBusy ? 'not-allowed' : 'pointer',
-                background: isBusy ? 'rgba(34,197,94,0.5)' : '#22c55e', color: '#000', fontSize: '15px', fontWeight: 900,
+                width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
+                cursor: isBusy ? 'not-allowed' : 'pointer',
+                background: isBusy ? 'rgba(34,197,94,0.4)' : '#22c55e',
+                color: '#000', fontSize: '15px', fontWeight: 900,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               }}>
-                {isBusy ? '⏳ Starting…' : '▶ Start Job'}
+                {isBusy ? <><Spinner /> Starting…</> : '▶  Start Job'}
               </button>
             )}
             {isRunning && (
-              <button disabled={isBusy} onClick={() => setShowReasons(true)} style={{
-                width: '100%', padding: '14px', borderRadius: '14px', border: '1px solid rgba(234,179,8,0.3)', cursor: 'pointer',
-                background: 'rgba(234,179,8,0.1)', color: '#fbbf24', fontSize: '15px', fontWeight: 700,
+              <button disabled={isBusy} onClick={() => setShowPause(true)} style={{
+                width: '100%', padding: '13px', borderRadius: '14px',
+                border: '1px solid rgba(234,179,8,0.3)', cursor: 'pointer',
+                background: 'rgba(234,179,8,0.08)', color: '#fbbf24', fontSize: '15px', fontWeight: 700,
               }}>
-                ⏸ Pause
+                ⏸  Pause
               </button>
             )}
             {isWorking && (
               <button disabled={isBusy} onClick={() => onRequestStop(job._id)} style={{
-                width: '100%', padding: '14px', borderRadius: '14px', border: '1px solid #2a2a2a',
-                cursor: isBusy ? 'not-allowed' : 'pointer',
-                background: '#1a1a1a', color: '#f87171', fontSize: '15px', fontWeight: 700,
+                width: '100%', padding: '13px', borderRadius: '14px',
+                border: '1px solid #2a2a2a', cursor: isBusy ? 'not-allowed' : 'pointer',
+                background: '#151515', color: '#f87171', fontSize: '15px', fontWeight: 700,
               }}>
-                ⏹ Stop Job
+                ⏹  Stop Job
               </button>
             )}
           </div>
         )}
 
-        {showReasons && (
+        {showPause && (
           <div>
-            <div style={{ color: '#888', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
-              Why are you pausing?
-            </div>
+            <div style={{ color: '#555', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>Why are you pausing?</div>
             {PAUSE_REASONS.map(r => (
-              <button key={r} disabled={isBusy} onClick={async () => { setShowReasons(false); await onAction(job._id, 'pause', { reason: r }); }} style={{
-                width: '100%', padding: '14px 16px', borderRadius: '12px', border: '1px solid #2a2a2a',
-                background: '#1e1e1e', color: '#ccc', fontSize: '14px', cursor: 'pointer', textAlign: 'left',
-                marginBottom: '8px', display: 'block',
+              <button key={r} disabled={isBusy} onClick={async () => { setShowPause(false); await onAction(job._id, 'pause', { reason: r }); }} style={{
+                width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1px solid #222',
+                background: '#181818', color: '#ccc', fontSize: '14px', cursor: 'pointer',
+                textAlign: 'left', marginBottom: '7px', display: 'block', fontFamily: 'inherit',
               }}>
                 {r}
               </button>
             ))}
-            <button onClick={() => setShowReasons(false)} style={{ color: '#444', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: '8px' }}>
+            <button onClick={() => setShowPause(false)} style={{ color: '#444', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: '8px', fontFamily: 'inherit' }}>
               Cancel
             </button>
           </div>
         )}
 
-        {(job.timer?.pauseLogs?.length ?? 0) > 0 && (
-          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #1e1e1e' }}>
-            <button onClick={() => setExpanded(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {expanded ? '▲' : '▼'} {job.timer!.pauseLogs.length} pause{job.timer!.pauseLogs.length > 1 ? 's' : ''} recorded
+        {(job.timer?.pauseLogs?.length ?? 0) > 0 && !showPause && (
+          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #1a1a1a' }}>
+            <button onClick={() => setShowLog(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3a', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px', fontFamily: 'inherit' }}>
+              {showLog ? '▲' : '▼'} {job.timer!.pauseLogs.length} pause{job.timer!.pauseLogs.length !== 1 ? 's' : ''}
             </button>
-            {expanded && (
-              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {showLog && (
+              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 {job.timer!.pauseLogs.map((p, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', background: '#1e1e1e', borderRadius: '10px', padding: '10px 14px', fontSize: '12px' }}>
-                    <span style={{ color: '#888' }}>{p.reason}</span>
-                    <span style={{ color: p.resumedAt ? '#4ade80' : '#fbbf24' }}>{p.resumedAt ? '✓ Resumed' : '⏸ Active'}</span>
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', background: '#181818', borderRadius: '9px', padding: '9px 12px', fontSize: '12px' }}>
+                    <span style={{ color: '#666' }}>{p.reason}</span>
+                    <span style={{ color: p.resumedAt ? '#4ade80' : '#fbbf24' }}>{p.resumedAt ? '✓' : '⏸'}</span>
                   </div>
                 ))}
               </div>
@@ -532,57 +433,506 @@ function JobCard({ job, now, onAction, busy, onRequestStop }: {
   );
 }
 
+function Spinner() {
+  return <div style={{ width: '14px', height: '14px', border: '2px solid rgba(0,0,0,0.2)', borderTopColor: '#000', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// DASHBOARD PAGE
+// LEAVE BOTTOM SHEET
 // ─────────────────────────────────────────────────────────────────────────────
-export function DashboardPage() {
-  const { user, logout } = useAuth();
-  const today = new Date().toISOString().split('T')[0];
+function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) {
+  const [tab,        setTab]        = useState<'request' | 'mine' | 'all'>('request');
+  const [type,       setType]       = useState<LeaveType>('Break Request');
+  const [date,       setDate]       = useState(todayStr());
+  const [reason,     setReason]     = useState('');
+  const [submitted,  setSubmitted]  = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr,  setSubmitErr]  = useState('');
 
-  const [jobs,          setJobs]          = useState<Job[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [error,         setError]         = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [stopJobId,     setStopJobId]     = useState<string | null>(null);
-  const [stopReason,    setStopReason]    = useState<string | null>(null);
+  const [myLeaves,    setMyLeaves]    = useState<Leave[]>([]);
+  const [allLeaves,   setAllLeaves]   = useState<Leave[]>([]);
+  const [loadingMine, setLoadingMine] = useState(false);
+  const [loadingAll,  setLoadingAll]  = useState(false);
 
-  // ── Leave sheet state ──────────────────────────────────────────────────────
-  const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
-  const [myLeaves,       setMyLeaves]       = useState<LeaveRequest[]>([]);
-  const [allLeaves,      setAllLeaves]      = useState<LeaveRequest[]>([
-    // Demo seed — replace with real API fetch below
-    { id: 1, staffId: 0, staffName: 'Nuwan Kumara',  type: 'Annual Leave', date: tomorrowStr(), reason: 'Family event',        status: 'Pending',  createdAt: new Date().toISOString() },
-    { id: 2, staffId: 0, staffName: 'Kasun Silva',   type: 'Sick Leave',   date: todayStr(),    reason: 'Doctor appointment',  status: 'Approved', createdAt: new Date().toISOString() },
-    { id: 3, staffId: 0, staffName: 'Malith Ranga',  type: 'Sick Leave',   date: todayStr(),    reason: 'Fever',               status: 'Approved', createdAt: new Date().toISOString() },
-    { id: 4, staffId: 0, staffName: 'Dilan Perera',  type: 'Annual Leave', date: tomorrowStr(), reason: 'Wedding',             status: 'Pending',  createdAt: new Date().toISOString() },
-  ]);
+  const mapLeave = (d: any): Leave => ({
+    id:        String(d.id || d._id),
+    staffId:   d.staffId,
+    staffName: d.staffName,
+    type:      d.type as LeaveType,
+    date:      d.date,
+    reason:    d.reason || '',
+    status:    d.status as LeaveStatus,
+    createdAt: d.createdAt,
+  });
 
-  const now = useNow();
-  const alertedRef = useRef<Set<string>>(new Set());
+  const fetchMyLeaves = useCallback(async () => {
+    setLoadingMine(true);
+    try {
+      const data: any[] = await apiFetch(
+        `/api/staff?resource=leave&staffId=${encodeURIComponent(user.id)}`,
+        undefined, user.token
+      );
+      setMyLeaves(data.map(mapLeave));
+    } catch {}
+    finally { setLoadingMine(false); }
+  }, [user]);
 
-  const handleLeaveSubmit = (req: Omit<LeaveRequest, 'id' | 'createdAt'>) => {
-    const newReq: LeaveRequest = { ...req, id: Date.now(), createdAt: new Date().toISOString() };
-    setMyLeaves(prev => [newReq, ...prev]);
-    setAllLeaves(prev => [newReq, ...prev]);
-    // TODO: POST to backend  →  fetch(`${API}/api/leave-requests`, { method:'POST', ... })
+  const fetchAllLeaves = useCallback(async () => {
+    setLoadingAll(true);
+    try {
+      const data: any[] = await apiFetch(
+        `/api/staff?resource=leave&branch=${encodeURIComponent(user.branch)}`,
+        undefined, user.token
+      );
+      setAllLeaves(data.map(mapLeave));
+    } catch {}
+    finally { setLoadingAll(false); }
+  }, [user]);
+
+  useEffect(() => {
+    if (tab === 'mine') fetchMyLeaves();
+    if (tab === 'all')  fetchAllLeaves();
+  }, [tab]);
+
+  const selectType = (t: LeaveType) => {
+    setType(t);
+    if (t === 'Tomorrow Off')       setDate(tomorrowStr());
+    else if (t !== 'Break Request') setDate(todayStr());
   };
 
+  const submit = async () => {
+    setSubmitErr(''); setSubmitting(true);
+    try {
+      await apiFetch('/api/staff?resource=leave&action=submit', {
+        method: 'POST',
+        body: JSON.stringify({
+          staffId:   user.id,
+          staffName: user.name,
+          branch:    user.branch,
+          type,
+          date: type === 'Break Request' ? todayStr() : date,
+          reason: reason.trim(),
+        }),
+      }, user.token);
+      setReason('');
+      setSubmitted(true);
+      setTimeout(() => setSubmitted(false), 3500);
+    } catch (err: any) {
+      setSubmitErr(err.message || 'Failed to submit');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const statusStyle = (s: LeaveStatus) =>
+    s === 'Approved'
+      ? { background: 'rgba(34,197,94,0.12)',  color: '#4ade80', border: '1px solid rgba(34,197,94,0.25)' }
+      : s === 'Denied'
+      ? { background: 'rgba(239,68,68,0.12)',  color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }
+      : { background: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)' };
+
+  const typeIcons: Record<LeaveType, string> = {
+    'Break Request': '☕', 'Annual Leave': '📅', 'Sick Leave': '🏥', 'Tomorrow Off': '⚠️',
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#111', border: '1px solid #1e1e1e', borderRadius: '24px 24px 0 0',
+        padding: '0 0 env(safe-area-inset-bottom, 16px)', width: '100%', maxWidth: '600px',
+        maxHeight: '88dvh', display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Handle */}
+        <div style={{ padding: '12px 0 6px', flexShrink: 0 }}>
+          <div style={{ width: '36px', height: '4px', background: '#2a2a2a', borderRadius: '2px', margin: '0 auto' }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 20px 0', flexShrink: 0 }}>
+          <div style={{ fontSize: '16px', fontWeight: 900, color: '#fff' }}>Leave & Breaks</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', fontSize: '18px', lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* Tab bar */}
+        <div style={{ display: 'flex', gap: '4px', margin: '16px 20px 0', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '4px', flexShrink: 0 }}>
+          {(['request', 'mine', 'all'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              flex: 1, padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+              fontSize: '12px', fontWeight: 700, transition: 'all 0.15s',
+              background: tab === t ? G : 'transparent',
+              color:      tab === t ? '#000' : '#555',
+              fontFamily: 'inherit',
+            }}>
+              {t === 'request' ? 'New Request' : t === 'mine' ? 'My History' : 'All Leaves'}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+
+          {/* ── REQUEST TAB ── */}
+          {tab === 'request' && (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                {(['Break Request', 'Sick Leave', 'Annual Leave', 'Tomorrow Off'] as LeaveType[]).map(t => (
+                  <button key={t} onClick={() => selectType(t)} style={{
+                    padding: '14px 12px', borderRadius: '14px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700,
+                    background: type === t ? 'rgba(255,215,0,0.08)' : 'rgba(255,255,255,0.03)',
+                    border:     type === t ? '2px solid rgba(255,215,0,0.4)' : '2px solid #1e1e1e',
+                    color:      type === t ? G : '#555',
+                    transition: 'all 0.15s', fontFamily: 'inherit',
+                  }}>
+                    <span style={{ fontSize: '18px' }}>{typeIcons[t]}</span> {t}
+                  </button>
+                ))}
+              </div>
+
+              {type !== 'Break Request' && (
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', color: '#444', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '7px' }}>Date</label>
+                  <input type="date" value={date} readOnly={type === 'Tomorrow Off'} onChange={e => setDate(e.target.value)} style={{
+                    width: '100%', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '12px',
+                    color: '#fff', padding: '11px 14px', fontSize: '14px', outline: 'none', boxSizing: 'border-box',
+                  }} />
+                  {type === 'Tomorrow Off' && <div style={{ color: '#333', fontSize: '11px', marginTop: '4px' }}>Auto-set to {fmtDate(tomorrowStr())}</div>}
+                </div>
+              )}
+
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', color: '#444', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '7px' }}>
+                  Reason <span style={{ color: '#2a2a2a', textTransform: 'none', fontWeight: 400 }}>(optional)</span>
+                </label>
+                <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+                  placeholder={type === 'Break Request' ? 'e.g. Lunch break…' : type === 'Sick Leave' ? 'e.g. Fever…' : 'e.g. Family event…'}
+                  style={{
+                    width: '100%', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '12px',
+                    color: '#fff', padding: '11px 14px', fontSize: '14px', outline: 'none', resize: 'none',
+                    fontFamily: 'inherit', boxSizing: 'border-box',
+                  }} />
+              </div>
+
+              {submitErr && (
+                <div style={{ marginBottom: '12px', padding: '12px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '12px', color: '#f87171', fontSize: '13px', fontWeight: 600 }}>
+                  ⚠ {submitErr}
+                </div>
+              )}
+
+              <button onClick={submit} disabled={submitting} style={{
+                width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
+                background: submitting ? 'rgba(255,215,0,0.5)' : G,
+                color: '#000', fontSize: '15px', fontWeight: 900,
+                cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              }}>
+                {submitting
+                  ? <><div style={{ width: '16px', height: '16px', border: '2px solid rgba(0,0,0,0.2)', borderTopColor: '#000', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Submitting…</>
+                  : 'Submit Request'}
+              </button>
+
+              {submitted && (
+                <div style={{ marginTop: '12px', padding: '12px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '12px', color: '#4ade80', fontSize: '13px', fontWeight: 700 }}>
+                  ✓ Request submitted — awaiting manager approval
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── MY HISTORY TAB ── */}
+          {tab === 'mine' && (
+            loadingMine
+              ? <div style={{ textAlign: 'center', padding: '48px 0', color: G }}>Loading…</div>
+              : myLeaves.length === 0
+              ? <div style={{ textAlign: 'center', padding: '48px 0', color: '#333', fontSize: '14px' }}>No requests yet</div>
+              : myLeaves.map(r => (
+                <div key={r.id} style={{ background: '#171717', border: '1px solid #1e1e1e', borderRadius: '14px', padding: '13px 15px', marginBottom: '9px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', color: '#fff', fontSize: '14px', fontWeight: 700 }}>
+                      <span style={{ fontSize: '15px' }}>{typeIcons[r.type]}</span> {r.type}
+                    </div>
+                    <span style={{ padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, ...statusStyle(r.status) }}>{r.status}</span>
+                  </div>
+                  {r.type !== 'Break Request' && <div style={{ color: '#444', fontSize: '12px' }}>📅 {fmtDate(r.date)}</div>}
+                  <div style={{ color: '#333', fontSize: '11px', marginTop: '3px' }}>Submitted {fmtDate(r.createdAt)}</div>
+                  {r.reason && <div style={{ color: '#555', fontSize: '12px', marginTop: '7px', fontStyle: 'italic' }}>"{r.reason}"</div>}
+                </div>
+              ))
+          )}
+
+          {/* ── ALL LEAVES TAB ── */}
+          {tab === 'all' && (
+            loadingAll
+              ? <div style={{ textAlign: 'center', padding: '48px 0', color: G }}>Loading…</div>
+              : allLeaves.length === 0
+              ? <div style={{ textAlign: 'center', padding: '48px 0', color: '#333', fontSize: '14px' }}>No leave records</div>
+              : allLeaves.map(r => (
+                <div key={r.id} style={{ background: '#171717', border: '1px solid #1e1e1e', borderRadius: '14px', padding: '13px 15px', marginBottom: '9px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: G, fontSize: '10px', fontWeight: 900, flexShrink: 0 }}>
+                        {r.staffName.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                      </div>
+                      <div>
+                        <div style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>{r.staffName}</div>
+                        <div style={{ color: '#444', fontSize: '11px' }}>{r.type}{r.type !== 'Break Request' ? ` · ${fmtDate(r.date)}` : ''}</div>
+                      </div>
+                    </div>
+                    <span style={{ padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, flexShrink: 0, ...statusStyle(r.status) }}>{r.status}</span>
+                  </div>
+                  {r.reason && <div style={{ color: '#444', fontSize: '12px', marginTop: '6px', fontStyle: 'italic' }}>"{r.reason}"</div>}
+                </div>
+              ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STOP MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function StopModal({ jobId, onConfirm, onClose }: { jobId: string; onConfirm: (id: string, reason: string) => void; onClose: () => void; }) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 500, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '16px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: '24px', padding: '24px', width: '100%', maxWidth: '480px' }}>
+        <div style={{ width: '36px', height: '4px', background: '#2a2a2a', borderRadius: '2px', margin: '0 auto 20px' }} />
+        <div style={{ color: '#fff', fontSize: '17px', fontWeight: 900, textAlign: 'center', marginBottom: '4px' }}>Stop this job?</div>
+        <div style={{ color: '#444', fontSize: '13px', textAlign: 'center', marginBottom: '22px' }}>Choose a reason to continue</div>
+
+        {STOP_REASONS.map(({ label, icon, col, bg, bd }) => {
+          const sel = selected === label;
+          return (
+            <button key={label} onClick={() => setSelected(label)} style={{
+              width: '100%', padding: '14px 16px', borderRadius: '14px', cursor: 'pointer',
+              fontSize: '14px', fontWeight: 800, marginBottom: '9px', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', gap: '12px',
+              background:  sel ? bg  : 'rgba(255,255,255,0.03)',
+              border:      sel ? `2px solid ${bd}` : '2px solid #1e1e1e',
+              color:       sel ? col : '#555', transition: 'all 0.15s',
+            }}>
+              <span style={{ width: '18px', height: '18px', borderRadius: '50%', border: sel ? `2px solid ${col}` : '2px solid #2a2a2a', background: sel ? col : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', color: '#000', fontWeight: 900, flexShrink: 0, transition: 'all 0.15s' }}>
+                {sel ? '✓' : ''}
+              </span>
+              <span style={{ fontSize: '16px' }}>{icon}</span>
+              <span>{label}</span>
+            </button>
+          );
+        })}
+
+        <button disabled={!selected} onClick={() => selected && onConfirm(jobId, selected)} style={{
+          width: '100%', padding: '16px', borderRadius: '14px', border: 'none',
+          cursor: selected ? 'pointer' : 'not-allowed', marginTop: '4px', marginBottom: '6px', fontFamily: 'inherit',
+          background: selected ? '#ef4444' : '#181818',
+          color:      selected ? '#fff'    : '#2a2a2a',
+          fontSize: '15px', fontWeight: 900, transition: 'all 0.2s',
+        }}>
+          {selected ? `⏹  Stop — ${selected}` : 'Select a reason above'}
+        </button>
+
+        <button onClick={onClose} style={{ color: '#333', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: '8px', fontFamily: 'inherit' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLOCK BAR — shift attendance buttons
+// ─────────────────────────────────────────────────────────────────────────────
+function ClockBar({ user, now }: { user: AuthUser; now: number }) {
+  type ClockStatus = 'off' | 'active' | 'on_break';
+  const [status,     setStatus]     = useState<ClockStatus | null>(null);
+  const [clockInAt,  setClockInAt]  = useState<string | null>(null);
+  const [busy,       setBusy]       = useState(false);
+
+  const today = todayStr();
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const data: any[] = await apiFetch(
+        `/api/staff?branch=${encodeURIComponent(user.branch)}&date=${today}`,
+        undefined, user.token
+      );
+      const me = (Array.isArray(data) ? data : []).find(
+        (s: any) => String(s.id || s._id) === String(user.id)
+      );
+      if (me) {
+        setStatus((me.dayStatus?.status as ClockStatus) || 'off');
+        setClockInAt(me.dayStatus?.clockInAt || null);
+      } else {
+        setStatus('off');
+      }
+    } catch {}
+  }, [user, today]);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  // Refresh every 30 s in case admin changes it remotely
+  useEffect(() => { const id = setInterval(fetchStatus, 30000); return () => clearInterval(id); }, [fetchStatus]);
+
+  const doAction = async (action: 'clock_in' | 'start_break' | 'end_break' | 'clock_out') => {
+    setBusy(true);
+    try {
+      await apiFetch(`/api/staff?resource=status&id=${user.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action, branch: user.branch, date: today }),
+      }, user.token);
+      await fetchStatus();
+    } catch {}
+    finally { setBusy(false); }
+  };
+
+  // Elapsed shift time
+  const shiftSecs = clockInAt && status !== 'off'
+    ? Math.floor((now - new Date(clockInAt).getTime()) / 1000)
+    : 0;
+  const shiftHH = String(Math.floor(shiftSecs / 3600)).padStart(2, '0');
+  const shiftMM = String(Math.floor((shiftSecs % 3600) / 60)).padStart(2, '0');
+
+  const statusLabel = status === 'active' ? 'On Shift' : status === 'on_break' ? 'On Break' : 'Not Clocked In';
+  const statusDot   = status === 'active' ? '#4ade80' : status === 'on_break' ? '#fbbf24' : '#3a3a3a';
+
+  return (
+    <div style={{ background: '#0d0d0d', borderBottom: '1px solid #161616', padding: '12px 16px' }}>
+      <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+
+        {/* Status row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: statusDot, flexShrink: 0, boxShadow: status === 'active' ? `0 0 6px ${statusDot}` : 'none' }} />
+            <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>{statusLabel}</span>
+          </div>
+          {status !== 'off' && clockInAt && (
+            <span style={{ color: '#444', fontSize: '12px', fontFamily: 'monospace' }}>
+              {shiftHH}:{shiftMM} elapsed
+            </span>
+          )}
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {(status === null || status === 'off') && (
+            <button
+              disabled={busy || status === null}
+              onClick={() => doAction('clock_in')}
+              style={{
+                flex: 1, padding: '13px', borderRadius: '14px', border: 'none',
+                background: busy ? 'rgba(34,197,94,0.4)' : '#22c55e',
+                color: '#000', fontSize: '14px', fontWeight: 900,
+                cursor: busy ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                fontFamily: 'inherit',
+              }}
+            >
+              {busy ? <><Spinner /> Clocking in…</> : '🟢  Clock In'}
+            </button>
+          )}
+
+          {status === 'active' && (
+            <>
+              <button
+                disabled={busy}
+                onClick={() => doAction('start_break')}
+                style={{
+                  flex: 1, padding: '13px', borderRadius: '14px',
+                  border: '1px solid rgba(234,179,8,0.3)', cursor: busy ? 'not-allowed' : 'pointer',
+                  background: 'rgba(234,179,8,0.08)', color: '#fbbf24',
+                  fontSize: '14px', fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {busy ? <Spinner /> : '⏸'}&nbsp; Break
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => doAction('clock_out')}
+                style={{
+                  padding: '13px 16px', borderRadius: '14px',
+                  border: '1px solid #1e1e1e', cursor: busy ? 'not-allowed' : 'pointer',
+                  background: '#111', color: '#555',
+                  fontSize: '13px', fontWeight: 700,
+                  fontFamily: 'inherit',
+                }}
+              >
+                Clock Out
+              </button>
+            </>
+          )}
+
+          {status === 'on_break' && (
+            <>
+              <button
+                disabled={busy}
+                onClick={() => doAction('end_break')}
+                style={{
+                  flex: 1, padding: '13px', borderRadius: '14px', border: 'none',
+                  background: busy ? 'rgba(34,197,94,0.4)' : '#22c55e',
+                  color: '#000', fontSize: '14px', fontWeight: 900,
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {busy ? <><Spinner /> Resuming…</> : '▶  Resume'}
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => doAction('clock_out')}
+                style={{
+                  padding: '13px 16px', borderRadius: '14px',
+                  border: '1px solid #1e1e1e', cursor: busy ? 'not-allowed' : 'pointer',
+                  background: '#111', color: '#555',
+                  fontSize: '13px', fontWeight: 700,
+                  fontFamily: 'inherit',
+                }}
+              >
+                Clock Out
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────────────────────────────────────
+function Dashboard({ user, onLogout, onShowLeaveExternal }: { user: AuthUser; onLogout: () => void; onShowLeaveExternal?: () => void }) {
+  const today = todayStr();
+  const now   = useNow();
+
+  const [jobs,       setJobs]       = useState<Job[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [stopJobId,  setStopJobId]  = useState<string | null>(null);
+
+  const alertedRef = useRef<Set<string>>(new Set());
+
   const fetchJobs = useCallback(async () => {
-    if (!user) return;
     setError(null);
     try {
-      const res  = await fetch(`${API}/api/jobs?branch=${encodeURIComponent(user.branch)}&date=${today}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to fetch jobs');
-      const mine = (Array.isArray(data) ? data : []).filter((j: Job) => {
+      const data: any[] = await apiFetch(
+        `/api/jobs?branch=${encodeURIComponent(user.branch)}&date=${today}`,
+        undefined, user.token
+      );
+      const mine = (Array.isArray(data) ? data : []).filter((j: any) => {
         if (j.status === 'unassigned') return false;
-        const jStaffId = j.staffId?.toString() || j.staffId;
-        const myId     = user?.id?.toString()  || user?.id;
-        return jStaffId && myId && jStaffId === myId;
+        return String(j.staffId) === String(user.id);
       });
       setJobs(mine);
-    } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, [user, today]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
@@ -591,217 +941,229 @@ export function DashboardPage() {
   useEffect(() => {
     for (const job of jobs) {
       if (job.status !== 'assigned' || !job.timeSlot) continue;
-      const m = minsUntilSlot(job.timeSlot);
+      const m   = minsUntilSlot(job.timeSlot);
       if (m === null) continue;
-      const key = `${job._id}-10min`;
+      const key = `${job._id}-10`;
       if (m <= 10 && m >= 9 && !alertedRef.current.has(key)) {
         alertedRef.current.add(key);
         if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-        if (Notification.permission === 'granted') new Notification('Job starting soon', { body: `${job.service} in ~10 min` });
-        else if (Notification.permission === 'default') Notification.requestPermission();
+        if (Notification.permission === 'granted')
+          new Notification('Job starting soon', { body: `${job.service} in ~10 min` });
+        else if (Notification.permission === 'default')
+          Notification.requestPermission();
       }
     }
   }, [jobs, now]);
 
-  const handleTimerAction = useCallback(async (jobId: string, action: string, extra: Record<string, string> = {}) => {
-    if (!user) return;
-    setActionLoading(jobId);
+  const handleAction = useCallback(async (jobId: string, action: string, extra: Record<string, string> = {}) => {
+    setActionBusy(jobId);
     try {
-      const res = await fetch(`${API}/api/jobs?resource=timer`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      await apiFetch('/api/jobs?resource=timer', {
+        method: 'POST',
         body: JSON.stringify({ jobId, staffId: user.id, action, ...extra }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Action failed');
+      }, user.token);
       await fetchJobs();
-    } catch (err: any) { setError(err.message); }
-    finally { setActionLoading(null); }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setActionBusy(null);
+    }
   }, [user, fetchJobs]);
 
-  const handleRequestStop  = useCallback((jobId: string) => { setStopReason(null); setStopJobId(jobId); }, []);
-  const handleStopConfirm  = useCallback(async (jobId: string, reason: string) => {
-    setStopJobId(null); setStopReason(null);
-    await handleTimerAction(jobId, 'stop', { stopReason: reason });
-  }, [handleTimerAction]);
-  const closeStopModal = useCallback(() => { setStopJobId(null); setStopReason(null); }, []);
+  const handleStopConfirm = useCallback(async (jobId: string, reason: string) => {
+    setStopJobId(null);
+    await handleAction(jobId, 'stop', { stopReason: reason });
+  }, [handleAction]);
 
   const activeJobs = jobs.filter(j => j.status !== 'done' && j.status !== 'terminated');
   const doneJobs   = jobs.filter(j => j.status === 'done' || j.status === 'terminated');
   const hasAlert   = jobs.some(j => { const m = minsUntilSlot(j.timeSlot); return j.status === 'assigned' && m !== null && m <= 10 && m >= 0; });
+  const initials   = user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0a0a', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
+    <div style={{ minHeight: '100dvh', background: '#0a0a0a', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#fff' }}>
+      {stopJobId && <StopModal jobId={stopJobId} onConfirm={handleStopConfirm} onClose={() => setStopJobId(null)} />}
 
-      {/* ── STOP MODAL ─────────────────────────────────────────────────────── */}
-      <div
-        onClick={closeStopModal}
-        style={{
-          display: stopJobId ? 'flex' : 'none',
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)',
-          zIndex: 500, alignItems: 'flex-end', justifyContent: 'center', padding: '16px',
-        }}
-      >
-        <div
-          onClick={e => e.stopPropagation()}
-          style={{
-            background: '#161616', border: '1px solid #2a2a2a',
-            borderRadius: '24px', padding: '24px', width: '100%', maxWidth: '480px',
-            marginBottom: 'env(safe-area-inset-bottom, 0px)',
-          }}
-        >
-          <div style={{ width: '36px', height: '4px', background: '#2a2a2a', borderRadius: '2px', margin: '0 auto 20px' }} />
-          <div style={{ color: '#fff', fontSize: '17px', fontWeight: 900, textAlign: 'center', marginBottom: '4px' }}>Stop this job?</div>
-          <div style={{ color: '#555', fontSize: '13px', textAlign: 'center', marginBottom: '22px' }}>Select a reason to continue</div>
-
-          {STOP_REASONS.map(({ label, icon, accent }) => {
-            const isSelected = stopReason === label;
-            return (
-              <button key={label} onClick={() => setStopReason(label)} style={{
-                width: '100%', padding: '15px 16px', borderRadius: '14px',
-                cursor: 'pointer', fontSize: '15px', fontWeight: 800, marginBottom: '10px',
-                display: 'flex', alignItems: 'center', gap: '12px',
-                background:  isSelected ? accent.bg    : 'rgba(255,255,255,0.03)',
-                border:      isSelected ? `2px solid ${accent.border}` : '2px solid #2a2a2a',
-                color:       isSelected ? accent.color : '#666',
-                transition:  'all 0.15s ease',
-              }}>
-                <span style={{
-                  width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
-                  border: isSelected ? `2px solid ${accent.color}` : '2px solid #333',
-                  background: isSelected ? accent.color : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '10px', color: '#000', fontWeight: 900, transition: 'all 0.15s ease',
-                }}>
-                  {isSelected ? '✓' : ''}
-                </span>
-                <span style={{ fontSize: '18px' }}>{icon}</span>
-                <span>{label}</span>
-              </button>
-            );
-          })}
-
-          <button
-            onClick={() => { if (stopJobId && stopReason) handleStopConfirm(stopJobId, stopReason); }}
-            disabled={!stopReason}
-            style={{
-              width: '100%', padding: '17px', borderRadius: '14px',
-              fontSize: '15px', fontWeight: 900, marginTop: '4px', marginBottom: '6px', border: 'none',
-              cursor: stopReason ? 'pointer' : 'not-allowed',
-              background: stopReason ? '#ef4444' : '#1e1e1e',
-              color:      stopReason ? '#fff'    : '#3a3a3a',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {stopReason ? `⏹ Stop Job · ${stopReason}` : 'Select a reason above'}
-          </button>
-
-          <button onClick={closeStopModal}
-            style={{ color: '#444', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: '8px' }}>
-            Cancel
-          </button>
-        </div>
-      </div>
-
-      {/* ── LEAVE SHEET ────────────────────────────────────────────────────── */}
-      {leaveSheetOpen && (
-        <LeaveSheet
-          onClose={() => setLeaveSheetOpen(false)}
-          myLeaves={myLeaves}
-          allLeaves={allLeaves}
-          onSubmit={handleLeaveSubmit}
-        />
-      )}
-
-      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 100, background: '#111', borderBottom: '1px solid #1e1e1e', padding: '0 20px' }}>
-        <div style={{ maxWidth: '600px', margin: '0 auto', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ position: 'relative' }}>
-              <div style={{
-                width: '40px', height: '40px', borderRadius: '50%',
-                background: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.25)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: GOLD, fontWeight: 900, fontSize: '13px',
-              }}>
-                {user?.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+      {/* Header */}
+      <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(12,12,12,0.95)', borderBottom: '1px solid #1a1a1a', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+        <div style={{ maxWidth: '640px', margin: '0 auto', height: '62px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,215,0,0.1)', border: '2px solid rgba(255,215,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: G, fontWeight: 900, fontSize: '13px', letterSpacing: '0.02em' }}>
+                {initials}
               </div>
-              {hasAlert && <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '12px', height: '12px', borderRadius: '50%', background: '#f97316', border: '2px solid #0a0a0a' }} />}
+              {hasAlert && <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '11px', height: '11px', borderRadius: '50%', background: '#f97316', border: '2px solid #0a0a0a', animation: 'pulse 1.5s infinite' }} />}
             </div>
             <div>
-              <div style={{ color: '#fff', fontWeight: 700, fontSize: '15px', lineHeight: 1.2 }}>{user?.name}</div>
-              <div style={{ color: '#555', fontSize: '12px' }}>{user?.role} · 📍 {user?.branch}</div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: '14px', lineHeight: 1.2 }}>{user.name}</div>
+              <div style={{ color: '#444', fontSize: '11px' }}>{user.role} · {user.branch}</div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* ── MY LEAVE BUTTON ── */}
-            <button
-              onClick={() => setLeaveSheetOpen(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: 'rgba(255,255,255,0.05)', border: '1px solid #2a2a2a',
-                borderRadius: 10, color: '#aaa', padding: '8px 12px',
-                fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              }}
-            >
-              📋 My Leave
-            </button>
-            <button onClick={fetchJobs} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#555', padding: '8px', borderRadius: '8px' }}>🔄</button>
-            <button onClick={logout}    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#555', padding: '8px', borderRadius: '8px', fontSize: '13px' }}>Sign out</button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button onClick={fetchJobs} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #1e1e1e', borderRadius: '10px', cursor: 'pointer', color: '#555', padding: '8px 10px', fontSize: '14px' }}>🔄</button>
+            <button onClick={onLogout} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #1e1e1e', borderRadius: '10px', cursor: 'pointer', color: '#444', padding: '8px 10px', fontSize: '13px', fontFamily: 'inherit' }}>Exit</button>
           </div>
         </div>
       </header>
 
-      {/* ── DATE BAR ────────────────────────────────────────────────── */}
-      <div style={{ background: '#111', borderBottom: '1px solid #1a1a1a', padding: '10px 20px', textAlign: 'center' }}>
-        <span style={{ color: '#555', fontSize: '13px' }}>
+      {/* Date strip */}
+      <div style={{ background: '#0d0d0d', borderBottom: '1px solid #161616', padding: '8px 16px', textAlign: 'center' }}>
+        <span style={{ color: '#333', fontSize: '12px', letterSpacing: '0.04em' }}>
           {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </span>
       </div>
 
-      {/* ── CONTENT ────────────────────────────────────────────────────────── */}
-      <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px 16px 40px' }}>
-        {error && (
-          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '14px', padding: '14px 16px', marginBottom: '20px', color: '#f87171', fontSize: '13px' }}>
-            ⚠ {error}
-          </div>
-        )}
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: GOLD, fontSize: '14px' }}>
-            ⏳ Loading your jobs…
-          </div>
-        )}
-        {!loading && jobs.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔧</div>
-            <div style={{ color: '#fff', fontWeight: 700, fontSize: '18px', marginBottom: '8px' }}>No jobs assigned yet</div>
-            <div style={{ color: '#555', fontSize: '14px', marginBottom: '24px' }}>Your supervisor will assign jobs from the admin dashboard</div>
-            <button onClick={fetchJobs} style={{ background: GOLD, border: 'none', borderRadius: '12px', padding: '12px 24px', color: '#000', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
-              Refresh
-            </button>
-          </div>
-        )}
-        {!loading && activeJobs.length > 0 && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <span style={{ color: '#555', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Today's Jobs</span>
-              <span style={{ color: '#444', fontSize: '12px' }}>{doneJobs.length}/{jobs.length} done</span>
+      {/* Clock In / Break / Resume bar */}
+      <ClockBar user={user} now={now} />
+
+      {/* Stats bar */}
+      <div style={{ background: '#0d0d0d', borderBottom: '1px solid #161616', padding: '10px 16px' }}>
+        <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          {[
+            { label: 'Total',  value: jobs.length,        col: '#fff' },
+            { label: 'Active', value: activeJobs.length,  col: '#4ade80' },
+            { label: 'Done',   value: doneJobs.length,    col: '#555' },
+          ].map(s => (
+            <div key={s.label} style={{ textAlign: 'center', padding: '0 16px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 900, color: s.col }}>{s.value}</div>
+              <div style={{ fontSize: '10px', color: '#333', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</div>
             </div>
-            {activeJobs.map(job => (
-              <JobCard key={job._id} job={job} now={now} onAction={handleTimerAction} busy={actionLoading} onRequestStop={handleRequestStop} />
+          ))}
+        </div>
+      </div>
+
+      {/* Main */}
+      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 14px 60px' }}>
+        {error && (
+          <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: '14px', padding: '13px 16px', marginBottom: '18px', color: '#f87171', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>⚠ {error}</span>
+            <button onClick={fetchJobs} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', textDecoration: 'underline', fontSize: '12px', fontFamily: 'inherit' }}>Retry</button>
+          </div>
+        )}
+
+        {loading && (
+          <div style={{ textAlign: 'center', padding: '64px 0', color: G, fontSize: '14px' }}>
+            <div style={{ marginBottom: '12px', fontSize: '32px' }}>⚙️</div>Loading your jobs…
+          </div>
+        )}
+
+        {!loading && jobs.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔧</div>
+            <div style={{ color: '#fff', fontWeight: 800, fontSize: '18px', marginBottom: '8px' }}>No jobs assigned yet</div>
+            <div style={{ color: '#333', fontSize: '14px', marginBottom: '24px', lineHeight: 1.6 }}>Your supervisor will assign jobs from the admin dashboard.</div>
+            <button onClick={fetchJobs} style={{ background: G, border: 'none', borderRadius: '14px', padding: '13px 28px', color: '#000', fontWeight: 900, fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>Refresh</button>
+          </div>
+        )}
+
+        {!loading && activeJobs.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <span style={{ color: '#2a2a2a', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Today's Jobs</span>
+              <span style={{ color: '#333', fontSize: '12px' }}>{doneJobs.length} / {jobs.length} done</span>
+            </div>
+            {activeJobs.map(j => (
+              <JobCard key={j._id} job={j} now={now} onAction={handleAction} busy={actionBusy} onRequestStop={id => setStopJobId(id)} />
             ))}
           </div>
         )}
+
         {!loading && doneJobs.length > 0 && (
-          <div style={{ marginTop: '8px' }}>
-            <div style={{ color: '#444', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>
+          <div>
+            <div style={{ color: '#2a2a2a', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>
               Completed ({doneJobs.length})
             </div>
-            {doneJobs.map(job => (
-              <JobCard key={job._id} job={job} now={now} onAction={handleTimerAction} busy={actionLoading} onRequestStop={handleRequestStop} />
+            {doneJobs.map(j => (
+              <JobCard key={j._id} job={j} now={now} onAction={handleAction} busy={actionBusy} onRequestStop={id => setStopJobId(id)} />
             ))}
           </div>
         )}
       </main>
+
+      <style>{`
+        @keyframes spin  { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+      `}</style>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT
+// ─────────────────────────────────────────────────────────────────────────────
+type Tab = 'jobs' | 'damage' | 'leave';
+
+export default function StaffPortal() {
+  const { user: ctxUser, token: ctxToken, logout: ctxLogout } = useAuth();
+  const [tab, setTab] = useState<Tab>('jobs');
+  const [showLeave, setShowLeave] = useState(false);
+
+  const user: AuthUser | null = ctxUser && ctxToken
+    ? { id: ctxUser.id, name: ctxUser.name, role: ctxUser.role, branch: ctxUser.branch, username: ctxUser.username, token: ctxToken }
+    : null;
+
+  const handleLogout = () => { clearAuth(); ctxLogout(); setTab('jobs'); };
+
+  if (!user) return <LoginScreen onLogin={(u) => { saveAuth(u); }} />;
+
+  const FONT = "'DM Sans', system-ui, sans-serif";
+  const TABS: { key: Tab; icon: string; label: string }[] = [
+    { key: 'jobs',   icon: '🔧', label: 'Jobs' },
+    { key: 'damage', icon: '🔍', label: 'Inspect' },
+    { key: 'leave',  icon: '📋', label: 'Leave' },
+  ];
+
+  const handleTabClick = (key: Tab) => {
+    if (key === 'leave') { setShowLeave(true); return; }
+    setTab(key);
+  };
+
+  return (
+    <div style={{ paddingBottom: '64px' }}>
+      {showLeave && <LeaveSheet user={user} onClose={() => setShowLeave(false)} />}
+
+      {tab === 'damage'
+        ? <StaffDamageInspectionPage user={user} onBack={() => setTab('jobs')} />
+        : <Dashboard user={user} onLogout={handleLogout} />
+      }
+
+      {/* Bottom Tab Navigation */}
+      <nav style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
+        background: 'rgba(8,8,8,0.97)', borderTop: '1px solid #1a1a1a',
+        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+        display: 'flex', height: '64px',
+        fontFamily: FONT,
+      }}>
+        {TABS.map(t => {
+          const isActive = t.key !== 'leave' && tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => handleTabClick(t.key)}
+              style={{
+                flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                justifyContent: 'center', gap: '4px', fontFamily: FONT,
+                color: isActive ? G : '#3a3a3a',
+                position: 'relative', transition: 'color 0.15s',
+              }}
+            >
+              {isActive && (
+                <span style={{
+                  position: 'absolute', top: 0, left: '20%', right: '20%',
+                  height: '2px', background: G, borderRadius: '0 0 2px 2px',
+                }} />
+              )}
+              <span style={{ fontSize: '22px', lineHeight: 1 }}>{t.icon}</span>
+              <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                {t.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

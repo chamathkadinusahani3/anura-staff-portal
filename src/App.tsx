@@ -12,7 +12,7 @@ function AppRouter() {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
         <svg
-          className="w-8 h-8 text-[#FFD700] animate-spin"
+          className="w-8 h-8 text-[#fef104] animate-spin"
           viewBox="0 0 24 24"
           fill="none"
         >

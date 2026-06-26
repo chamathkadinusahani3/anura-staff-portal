@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 const API = (import.meta.env.VITE_API_URL || 'https://anuratyres-backend-emm1774.vercel.app/api')
   .replace(/\/api$/, '');
 
-const GOLD = '#FFD700';
+const GOLD = '#fef104';
 
 interface PauseLog { reason: string; pausedAt: string; resumedAt: string|null; }
 interface Job {
@@ -180,7 +180,7 @@ export function SupervisorPage() {
         <div style={{ maxWidth:'600px', margin:'0 auto', height:'64px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
             <div style={{ position:'relative' }}>
-              <div style={{ width:'40px', height:'40px', borderRadius:'50%', background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.25)', display:'flex', alignItems:'center', justifyContent:'center', color:GOLD, fontWeight:900, fontSize:'13px' }}>
+              <div style={{ width:'40px', height:'40px', borderRadius:'50%', background:'rgba(254,241,4,0.1)', border:'1px solid rgba(254,241,4,0.25)', display:'flex', alignItems:'center', justifyContent:'center', color:GOLD, fontWeight:900, fontSize:'13px' }}>
                 {user?.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
               </div>
               {pendingApprovals.length > 0 && (
@@ -321,7 +321,7 @@ export function SupervisorPage() {
                         </span>
                         {isPaused && (
                           <button disabled={actionLoading===job._id} onClick={() => handleApprove(job._id)} style={{
-                            background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.3)', color:GOLD,
+                            background:'rgba(254,241,4,0.1)', border:'1px solid rgba(254,241,4,0.3)', color:GOLD,
                             borderRadius:'10px', padding:'6px 12px', fontSize:'12px', fontWeight:700, cursor:'pointer',
                           }}>
                             {actionLoading===job._id?'⏳':'✓ Approve'}

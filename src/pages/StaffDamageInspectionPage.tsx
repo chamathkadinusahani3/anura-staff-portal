@@ -1,7 +1,7 @@
 /**
  * StaffDamageInspectionPage.tsx
  * Full damage inspection & customer approval module for the staff portal.
- * Inline styles — matches portal dark theme (#0a0a0a / #FFD700).
+ * Inline styles — matches portal dark theme (#0a0a0a / #fef104).
  *
  * API:
  *   GET  /api/jobs?branch=X&date=Y              → Job[]
@@ -10,10 +10,42 @@
  *   PATCH /api/crm?resource=inspections&id=X   → save all fields
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Component } from 'react';
+import type { ReactNode, ErrorInfo } from 'react';
 
 const API = 'https://anuratyres-backend-emm1774.vercel.app/api';
-const G   = '#FFD700';
+const G   = '#fef104';
+
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+class InspectionErrorBoundary extends Component<
+  { children: ReactNode; onReset: () => void },
+  { error: Error | null }
+> {
+  state = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[InspectionPage] render error', error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const msg = (this.state.error as Error).message;
+      return (
+        <div style={{ minHeight: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{ textAlign: 'center', maxWidth: '340px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '14px' }}>⚠️</div>
+            <div style={{ color: '#ef4444', fontWeight: 800, fontSize: '15px', marginBottom: '8px' }}>Something went wrong</div>
+            <div style={{ color: '#555', fontSize: '12px', marginBottom: '24px', fontFamily: 'monospace', background: '#111', borderRadius: '10px', padding: '10px', textAlign: 'left', wordBreak: 'break-all' }}>{msg}</div>
+            <button onClick={() => { this.setState({ error: null }); this.props.onReset(); }}
+              style={{ background: G, color: '#000', border: 'none', borderRadius: '12px', padding: '12px 28px', fontWeight: 900, cursor: 'pointer' }}>
+              Back to Job List
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser { id: string; name: string; role: string; branch: string; token: string; }
@@ -114,14 +146,14 @@ function buildTimeline(techName: string, createdAt: string): TimelineEvent[] {
 // ─── Shared card wrapper ──────────────────────────────────────────────────────
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: '20px', overflow: 'hidden', ...style }}>
+    <div style={{ background: '#161616', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '20px', overflow: 'hidden', ...style }}>
       {children}
     </div>
   );
 }
 function CardHead({ emoji, title, right }: { emoji: string; title: string; right?: React.ReactNode }) {
   return (
-    <div style={{ background: '#161616', borderBottom: '1px solid #1e1e1e', padding: '13px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ background: '#161616', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '13px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
         <span style={{ fontSize: '16px' }}>{emoji}</span>
         <span style={{ color: '#fff', fontWeight: 800, fontSize: '14px' }}>{title}</span>
@@ -207,12 +239,13 @@ const LBL: React.CSSProperties = {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
-export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; onBack: () => void }) {
+function InspectionInner({ user, onBack }: { user: AuthUser; onBack: () => void }) {
 
   // ── Job selector state ──────────────────────────────────────────────────────
   const [jobs,        setJobs]        = useState<any[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobSearch,   setJobSearch]   = useState('');
+  const [jobDate,     setJobDate]     = useState(todayStr());
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   // ── Inspection state ────────────────────────────────────────────────────────
@@ -238,10 +271,10 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
   // ── UI state ────────────────────────────────────────────────────────────────
   const [showAddDamage,  setShowAdd]  = useState(false);
   const [editingDamage,  setEditing]  = useState<DamageReport | null>(null);
-  const [lightbox,       setLightbox] = useState<string | null>(null);
+  const [lightbox,       setLightbox] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
   const [copiedLink,     setCopied]   = useState(false);
   const [sendingApproval, setSending] = useState(false);
-  const [showTimeline,   setShowTL]   = useState(false);
+  const [showTL,         setShowTL]   = useState(false);
   const [showAudit,      setShowAudit]= useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -255,26 +288,26 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
   const approvalLink    = inspectionId ? `https://anuratyres.lk/#/approve/${inspectionId}` : '';
   const approvalIdx     = APPROVAL_STEPS.findIndex(s => s.key === approvalStatus);
 
-  // ── Fetch today's jobs for this branch ─────────────────────────────────────
+  // ── Fetch jobs for this branch on the selected date ───────────────────────
   useEffect(() => {
     if (selectedJobId) return;
     setJobsLoading(true);
-    const today = todayStr();
-    fetch(`${API}/jobs?branch=${encodeURIComponent(user.branch)}&date=${today}`, {
+    fetch(`${API}/jobs?branch=${encodeURIComponent(user.branch)}&date=${jobDate}`, {
       headers: { Authorization: `Bearer ${user.token}` },
     })
       .then(r => r.json())
       .then(data => {
-        // Show all branch jobs — any staff can inspect any vehicle in their branch
         setJobs(Array.isArray(data) ? data : []);
       })
       .catch(() => setJobs([]))
       .finally(() => setJobsLoading(false));
-  }, [selectedJobId, user.branch, user.token]);
+  }, [selectedJobId, user.branch, user.token, jobDate]);
 
   // ── Load / create inspection when job selected ─────────────────────────────
   useEffect(() => {
     if (!selectedJobId) return;
+    let cancelled = false;
+
     const rawJob = jobs.find(j => (j._id?.toString() || j.id) === selectedJobId);
 
     const buildSummary = (j: any): JobSummary => ({
@@ -291,10 +324,15 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
     });
     if (rawJob) setJob(buildSummary(rawJob));
 
-    setLoading(true); setDataReady(false);
+    setLoading(true); setDataReady(false); setLoadError(null);
+    setInspectionId(null); setDamage([]); setNotes(''); setApproval('not_sent');
+    setTs({}); setTimeline([]); setAudit([]); setMedia([]);
+    setQuote([{ id: uid(), item: '', qty: 1, unitPrice: 0, labourCost: 0 }]);
+
     fetch(`${API}/crm?resource=inspections&jobId=${encodeURIComponent(selectedJobId)}`)
       .then(r => r.json())
       .then(async data => {
+        if (cancelled) return;
         if (data?.id) {
           setInspectionId(data.id);
           if (data.jobSummary?.jobNumber) setJob((p: JobSummary | null) => p ? { ...p, ...data.jobSummary } : data.jobSummary);
@@ -318,14 +356,23 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ jobId: selectedJobId, jobSummary: summary || {} }),
           });
+          if (cancelled) return;
           const created = await resp.json();
-          setInspectionId(created.id);
+          setInspectionId(created.id || null);
           setTimeline(initTL); setAudit(initAudit);
-          setQuote([{ id: uid(), item: '', qty: 1, unitPrice: 0, labourCost: 0 }]);
         }
       })
-      .catch(e => { console.error('[inspection] load failed', e); setLoadError('Failed to load inspection. Check connection and try again.'); })
-      .finally(() => { setLoading(false); setDataReady(true); });
+      .catch(e => {
+        if (cancelled) return;
+        console.error('[inspection] load failed', e);
+        setLoadError('Failed to load inspection. Check your connection and try again.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false); setDataReady(true);
+      });
+
+    return () => { cancelled = true; };
   }, [selectedJobId, retryKey]);
 
   // ── Autosave (2 s debounce) ─────────────────────────────────────────────────
@@ -389,9 +436,21 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
         const data = await compressImage(file);
         setMedia(m => [...m, { id: uid(), type: 'image', url: data, name: file.name, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: user.name }]);
       } else if (file.type.startsWith('video/')) {
-        const blobUrl = URL.createObjectURL(file);
-        const mf: MediaFile = { id: uid(), type: 'video', url: blobUrl, name: file.name, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: user.name };
-        const vid = document.createElement('video'); vid.preload = 'metadata'; vid.src = blobUrl;
+        const MAX_MB = 20;
+        if (file.size > MAX_MB * 1024 * 1024) {
+          alert(`"${file.name}" is too large (>${MAX_MB}MB). Please use a shorter or lower-quality clip.`);
+          continue;
+        }
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const mf: MediaFile = { id: uid(), type: 'video', url: dataUrl, name: file.name, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: user.name };
+        const vid = document.createElement('video');
+        vid.preload = 'metadata';
+        vid.src = dataUrl;
         vid.onloadedmetadata = () => setMedia(m => m.map(x => x.id === mf.id ? { ...x, duration: Math.round(vid.duration) } : x));
         setMedia(m => [...m, mf]);
       }
@@ -426,7 +485,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
 
   useEffect(() => { if (quoteAddl > 0 && dataReady) advanceTL('Quotation Generated'); }, [quoteAddl]);
 
-  const FONT = "'DM Sans', system-ui, sans-serif";
+  const FONT = "'Inter', system-ui, sans-serif";
   const S = { minHeight: '100dvh', background: '#0a0a0a', fontFamily: FONT, color: '#fff' };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -443,7 +502,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
 
     return (
       <div style={S}>
-        <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(10,10,10,0.95)', borderBottom: '1px solid #1a1a1a', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+        <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
           <div style={{ maxWidth: '640px', margin: '0 auto', height: '62px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #222', borderRadius: '10px', color: '#888', padding: '8px 12px', fontSize: '13px', cursor: 'pointer', fontFamily: FONT, fontWeight: 700 }}>
               ← Jobs
@@ -456,12 +515,33 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
         </header>
 
         <div style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 14px' }}>
+          {/* Date filter */}
+          <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}>📅</span>
+              <input
+                type="date"
+                value={jobDate}
+                onChange={e => setJobDate(e.target.value)}
+                style={{ width: '100%', background: '#161616', border: '1px solid rgba(255,255,255,0.09)', borderRadius: '14px', color: '#fff', padding: '12px 16px 12px 40px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', fontFamily: FONT, colorScheme: 'dark' }}
+              />
+            </div>
+            {jobDate !== todayStr() && (
+              <button
+                onClick={() => setJobDate(todayStr())}
+                style={{ background: 'rgba(254,241,4,0.08)', border: '1px solid rgba(254,241,4,0.2)', borderRadius: '12px', color: '#fef104', padding: '12px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: FONT, whiteSpace: 'nowrap' }}
+              >
+                Today
+              </button>
+            )}
+          </div>
+
           {/* Search */}
           <div style={{ marginBottom: '16px' }}>
             <input
               value={jobSearch} onChange={e => setJobSearch(e.target.value)}
               placeholder="🔍  Search vehicle, customer, service…"
-              style={{ width: '100%', background: '#111', border: '1px solid #1e1e1e', borderRadius: '14px', color: '#fff', padding: '13px 16px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', fontFamily: FONT }}
+              style={{ width: '100%', background: '#161616', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', color: '#fff', padding: '13px 16px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', fontFamily: FONT }}
             />
           </div>
 
@@ -470,7 +550,9 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
           {!jobsLoading && filtered.length === 0 && (
             <div style={{ textAlign: 'center', padding: '60px 20px' }}>
               <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔍</div>
-              <div style={{ color: '#555', fontSize: '14px' }}>No jobs found for today</div>
+              <div style={{ color: '#555', fontSize: '14px' }}>
+                No jobs found for {jobDate === todayStr() ? 'today' : new Date(jobDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </div>
             </div>
           )}
 
@@ -482,13 +564,13 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
               <div
                 key={jid}
                 onClick={() => { setLoading(true); setDataReady(false); setLoadError(null); setSelectedJobId(jid); }}
-                style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: '18px', padding: '16px 18px', marginBottom: '12px', cursor: 'pointer', transition: 'border-color 0.15s' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(255,215,0,0.2)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = '#1e1e1e')}
+                style={{ background: '#161616', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '18px', padding: '16px 18px', marginBottom: '12px', cursor: 'pointer', transition: 'border-color 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(254,241,4,0.2)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)')}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>🚗</div>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(254,241,4,0.08)', border: '1px solid rgba(254,241,4,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>🚗</div>
                     <div>
                       <div style={{ color: '#fff', fontWeight: 900, fontFamily: 'monospace', fontSize: '15px' }}>{j.vehiclePlate || '—'}</div>
                       <div style={{ color: '#444', fontSize: '11px' }}>{j.branch}</div>
@@ -499,7 +581,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
                   </span>
                 </div>
                 <div style={{ color: '#ccc', fontSize: '14px', fontWeight: 600, marginBottom: '3px' }}>{j.customerName || '—'}</div>
-                <div style={{ color: 'rgba(255,215,0,0.6)', fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>{j.service}</div>
+                <div style={{ color: 'rgba(254,241,4,0.6)', fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>{j.service}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: '#333', fontSize: '11px' }}>👤 {j.staffName || 'Unassigned'}</span>
                   <span style={{ color: G, fontSize: '12px', fontWeight: 800 }}>Inspect →</span>
@@ -513,11 +595,11 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // LOADING
+  // LOADING  (only reached when selectedJobId is set)
   // ─────────────────────────────────────────────────────────────────────────────
   if (loading || !dataReady) {
     return (
-      <div style={{ ...S, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>⚙️</div>
           <div style={{ color: G, fontSize: '14px' }}>Loading inspection record…</div>
@@ -564,7 +646,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
       <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }`}</style>
 
       {/* Header */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(10,10,10,0.95)', borderBottom: '1px solid #1a1a1a', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+      <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
         <div style={{ maxWidth: '640px', margin: '0 auto', height: '62px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button onClick={() => setSelectedJobId(null)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #222', borderRadius: '10px', color: '#888', padding: '8px 12px', fontSize: '13px', cursor: 'pointer', fontFamily: FONT, fontWeight: 700 }}>
@@ -599,7 +681,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
               { label: 'Technician', value: safeJob.technician || user.name },
               { label: 'Estimate',   value: fmtCur(safeJob.originalCost), gold: true },
             ].map(({ label, value, mono, full, gold }) => (
-              <div key={label} style={{ gridColumn: full ? '1 / -1' : undefined, background: '#161616', borderRadius: '12px', padding: '10px 12px', border: gold ? `1px solid rgba(255,215,0,0.2)` : '1px solid #1e1e1e' }}>
+              <div key={label} style={{ gridColumn: full ? '1 / -1' : undefined, background: '#161616', borderRadius: '12px', padding: '10px 12px', border: gold ? `1px solid rgba(254,241,4,0.2)` : '1px solid rgba(255,255,255,0.07)' }}>
                 <div style={{ color: '#333', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{label}</div>
                 <div style={{ color: gold ? G : '#fff', fontSize: '14px', fontWeight: 800, fontFamily: mono ? 'monospace' : FONT }}>{value}</div>
               </div>
@@ -643,7 +725,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
                         <span style={{ background: `${SEVERITY_COLOR[r.severity]}20`, color: SEVERITY_COLOR[r.severity], border: `1px solid ${SEVERITY_COLOR[r.severity]}40`, borderRadius: '999px', padding: '2px 10px', fontSize: '11px', fontWeight: 700 }}>{r.severity}</span>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', marginLeft: '10px', flexShrink: 0 }}>
-                        <button onClick={() => setEditing(r)} style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: '8px', color: G, cursor: 'pointer', padding: '6px 10px', fontSize: '12px' }}>✏️</button>
+                        <button onClick={() => setEditing(r)} style={{ background: 'rgba(254,241,4,0.08)', border: '1px solid rgba(254,241,4,0.15)', borderRadius: '8px', color: G, cursor: 'pointer', padding: '6px 10px', fontSize: '12px' }}>✏️</button>
                         <button onClick={() => delDamage(r.id)} style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '8px', color: '#f87171', cursor: 'pointer', padding: '6px 10px', fontSize: '12px' }}>🗑</button>
                       </div>
                     </div>
@@ -657,7 +739,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
             ))}
 
             {damageReports.length > 0 && (
-              <div style={{ background: 'rgba(255,215,0,0.04)', border: '1px solid rgba(255,215,0,0.15)', borderRadius: '14px', padding: '14px 16px', textAlign: 'right' }}>
+              <div style={{ background: 'rgba(254,241,4,0.04)', border: '1px solid rgba(254,241,4,0.15)', borderRadius: '14px', padding: '14px 16px', textAlign: 'right' }}>
                 <div style={{ color: '#444', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Total Additional</div>
                 <div style={{ color: G, fontWeight: 900, fontSize: '22px' }}>{fmtCur(addlFromReports)}</div>
               </div>
@@ -692,15 +774,24 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
                 {mediaFiles.map(m => (
                   <div key={m.id} style={{ position: 'relative', aspectRatio: '1', borderRadius: '10px', overflow: 'hidden', background: '#1a1a1a', cursor: 'pointer' }}
-                    onClick={() => m.type === 'image' && m.url && setLightbox(m.url)}>
+                    onClick={() => m.url && setLightbox({ url: m.url, type: m.type })}>
                     {m.type === 'image' && m.url
                       ? <img src={m.url} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : m.type === 'video' && m.url
+                      ? <video src={m.url} muted preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>▶️</div>
                     }
+                    {m.type === 'video' && (
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: '14px', marginLeft: '3px' }}>▶</span>
+                        </div>
+                      </div>
+                    )}
                     <button
                       onClick={e => { e.stopPropagation(); setMedia(prev => prev.filter(x => x.id !== m.id)); logAudit('Deleted media file'); }}
                       style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.7)', border: 'none', borderRadius: '6px', color: '#f87171', cursor: 'pointer', width: '22px', height: '22px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-                    <span style={{ position: 'absolute', bottom: '4px', left: '4px', background: m.type === 'video' ? 'rgba(96,165,250,0.8)' : 'rgba(255,215,0,0.8)', color: '#000', borderRadius: '4px', padding: '1px 5px', fontSize: '9px', fontWeight: 900 }}>
+                    <span style={{ position: 'absolute', bottom: '4px', left: '4px', background: m.type === 'video' ? 'rgba(96,165,250,0.8)' : 'rgba(254,241,4,0.8)', color: '#000', borderRadius: '4px', padding: '1px 5px', fontSize: '9px', fontWeight: 900 }}>
                       {m.type === 'video' ? 'VID' : 'IMG'}
                     </span>
                   </div>
@@ -720,7 +811,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
               rows={6} value={techNotes}
               onChange={e => setNotes(e.target.value)}
               placeholder="Describe the full inspection findings in detail…"
-              style={{ width: '100%', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '14px', color: '#fff', padding: '13px 15px', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: FONT, lineHeight: 1.6, boxSizing: 'border-box' }}
+              style={{ width: '100%', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', color: '#fff', padding: '13px 15px', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: FONT, lineHeight: 1.6, boxSizing: 'border-box' }}
             />
             <div style={{ color: '#333', fontSize: '11px', textAlign: 'right', marginTop: '5px' }}>{techNotes.length} characters</div>
           </div>
@@ -735,7 +826,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
             {quotationItems.map(row => {
               const rowTotal = row.qty * row.unitPrice + row.labourCost;
               return (
-                <div key={row.id} style={{ background: '#161616', border: '1px solid #1e1e1e', borderRadius: '14px', padding: '13px 15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div key={row.id} style={{ background: '#161616', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '13px 15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input value={row.item} onChange={e => updRow(row.id, 'item', e.target.value)}
                       placeholder="Item / Part description" style={{ flex: 1, background: '#0d0d0d', border: '1px solid #2a2a2a', borderRadius: '10px', color: '#fff', padding: '9px 12px', fontSize: '14px', outline: 'none', fontFamily: FONT }} />
@@ -760,7 +851,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
             })}
 
             {/* Cost summary */}
-            <div style={{ background: 'rgba(255,215,0,0.04)', border: '1px solid rgba(255,215,0,0.12)', borderRadius: '14px', padding: '14px 16px' }}>
+            <div style={{ background: 'rgba(254,241,4,0.04)', border: '1px solid rgba(254,241,4,0.12)', borderRadius: '14px', padding: '14px 16px' }}>
               {[
                 { label: 'Original Estimate', value: safeJob.originalCost, col: '#fff' },
                 { label: 'Additional Parts',  value: quotationItems.reduce((s, i) => s + i.qty * i.unitPrice, 0), col: '#fb923c' },
@@ -771,7 +862,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
                   <span style={{ color: col, fontWeight: 700 }}>{fmtCur(value)}</span>
                 </div>
               ))}
-              <div style={{ borderTop: '1px solid rgba(255,215,0,0.15)', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ borderTop: '1px solid rgba(254,241,4,0.15)', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#fff', fontWeight: 900, fontSize: '15px' }}>Grand Total</span>
                 <span style={{ color: G, fontWeight: 900, fontSize: '22px' }}>{fmtCur(grandTotal)}</span>
               </div>
@@ -785,7 +876,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
           <div style={{ padding: '16px' }}>
             {/* Stepper */}
             <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', marginBottom: '16px' }}>
-              <div style={{ position: 'absolute', top: '15px', left: '10%', right: '10%', height: '2px', background: '#1e1e1e', zIndex: 0 }} />
+              <div style={{ position: 'absolute', top: '15px', left: '10%', right: '10%', height: '2px', background: 'rgba(255,255,255,0.07)', zIndex: 0 }} />
               {APPROVAL_STEPS.filter(s => s.key !== 'rejected' || approvalStatus === 'rejected').map((step, i) => {
                 const done    = i < approvalIdx;
                 const active  = approvalStatus === step.key;
@@ -832,7 +923,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
             {/* Approval link */}
             {inspectionId && (
               <div style={{ display: 'flex', gap: '8px' }}>
-                <div style={{ flex: 1, background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '11px 13px', overflow: 'hidden' }}>
+                <div style={{ flex: 1, background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '11px 13px', overflow: 'hidden' }}>
                   <div style={{ color: '#333', fontFamily: 'monospace', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{approvalLink}</div>
                 </div>
                 <button onClick={copyLink} style={{ ...GHOST_BTN, padding: '11px 14px', flexShrink: 0, color: copiedLink ? '#4ade80' : '#888', borderColor: copiedLink ? 'rgba(34,197,94,0.3)' : '#2a2a2a', background: copiedLink ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.05)' }}>
@@ -882,7 +973,7 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
             <div style={{ padding: '16px' }}>
               {timeline.length === 0 && <div style={{ color: '#333', fontSize: '13px', textAlign: 'center' }}>No events yet</div>}
               <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: '14px', top: '4px', bottom: '4px', width: '2px', background: '#1e1e1e' }} />
+                <div style={{ position: 'absolute', left: '14px', top: '4px', bottom: '4px', width: '2px', background: 'rgba(255,255,255,0.07)' }} />
                 {timeline.map(e => (
                   <div key={e.id} style={{ display: 'flex', gap: '14px', paddingLeft: '36px', marginBottom: '14px', position: 'relative', opacity: e.status === 'pending' ? 0.35 : 1 }}>
                     <div style={{ position: 'absolute', left: '0', top: '2px', width: '28px', height: '28px', borderRadius: '50%', background: e.status === 'done' ? e.color : e.status === 'active' ? '#111' : '#111', border: e.status === 'active' ? `2px solid ${G}` : e.status === 'done' ? 'none' : '2px solid #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: e.status === 'done' ? '#000' : e.status === 'active' ? G : '#333' }}>
@@ -935,10 +1026,27 @@ export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; on
       {lightbox && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
           onClick={() => setLightbox(null)}>
-          <img src={lightbox} style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: '12px', objectFit: 'contain' }} />
+          {lightbox.type === 'video'
+            ? <video
+                src={lightbox.url}
+                controls
+                autoPlay
+                onClick={e => e.stopPropagation()}
+                style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: '12px', outline: 'none' }}
+              />
+            : <img src={lightbox.url} style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: '12px', objectFit: 'contain' }} />
+          }
           <button onClick={() => setLightbox(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', color: '#fff', fontSize: '16px', cursor: 'pointer' }}>✕</button>
         </div>
       )}
     </div>
+  );
+}
+
+export function StaffDamageInspectionPage({ user, onBack }: { user: AuthUser; onBack: () => void }) {
+  return (
+    <InspectionErrorBoundary onReset={onBack}>
+      <InspectionInner user={user} onBack={onBack} />
+    </InspectionErrorBoundary>
   );
 }

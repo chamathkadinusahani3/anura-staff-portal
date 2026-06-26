@@ -29,7 +29,7 @@ export function LoginPage() {
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #0a0a0a 0%, #111 50%, #0a0a0a 100%)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '24px', fontFamily: 'system-ui, -apple-system, sans-serif',
+      padding: '24px', fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
     }}>
       <div style={{ width: '100%', maxWidth: '400px' }}>
 
@@ -41,7 +41,7 @@ export function LoginPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 20px',
           }}>
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#FFD700" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fef104" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
             </svg>
           </div>
@@ -90,7 +90,7 @@ export function LoginPage() {
                   color: '#fff', fontSize: '15px', outline: 'none',
                   transition: 'border-color 0.2s',
                 }}
-                onFocus={e => e.target.style.borderColor = 'rgba(255,215,0,0.5)'}
+                onFocus={e => e.target.style.borderColor = 'rgba(254,241,4,0.5)'}
                 onBlur={e => e.target.style.borderColor = '#2a2a2a'}
               />
             </div>
@@ -112,7 +112,7 @@ export function LoginPage() {
                     background: '#1e1e1e', border: '1px solid #2a2a2a', borderRadius: '12px',
                     color: '#fff', fontSize: '15px', outline: 'none',
                   }}
-                  onFocus={e => e.target.style.borderColor = 'rgba(255,215,0,0.5)'}
+                  onFocus={e => e.target.style.borderColor = 'rgba(254,241,4,0.5)'}
                   onBlur={e => e.target.style.borderColor = '#2a2a2a'}
                 />
                 <button type="button" onClick={() => setShowPass(v => !v)} style={{
@@ -127,7 +127,7 @@ export function LoginPage() {
             {/* Submit */}
             <button type="submit" disabled={loading} style={{
               width: '100%', padding: '16px', borderRadius: '12px', border: 'none',
-              background: loading ? 'rgba(255,215,0,0.6)' : '#FFD700',
+              background: loading ? 'rgba(254,241,4,0.6)' : '#fef104',
               color: '#000', fontSize: '15px', fontWeight: 900, cursor: loading ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               transition: 'background 0.2s',

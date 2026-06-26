@@ -22,7 +22,7 @@ const API = (
   'https://anuratyres-backend-emm1774.vercel.app/api'
 ).replace(/\/api$/, '');
 
-const G = '#FFD700'; // gold
+const G = '#fef104'; // brand yellow
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser { id: string; name: string; role: string; branch: string; username: string; token: string; }
@@ -134,12 +134,12 @@ function LoginScreen({ onLogin }: { onLogin: (u: AuthUser) => void }) {
     <div style={{
       minHeight: '100dvh', background: '#080808',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      padding: '20px', fontFamily: "'DM Sans', system-ui, sans-serif",
+      padding: '20px', fontFamily: "Inter, system-ui, sans-serif",
     }}>
       <div style={{
         position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
         width: '600px', height: '300px', borderRadius: '0 0 300px 300px',
-        background: 'radial-gradient(ellipse, rgba(255,215,0,0.06) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse, rgba(254,241,4,0.06) 0%, transparent 70%)',
         pointerEvents: 'none',
       }} />
 
@@ -148,9 +148,9 @@ function LoginScreen({ onLogin }: { onLogin: (u: AuthUser) => void }) {
           <div style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: '64px', height: '64px', borderRadius: '20px',
-            background: 'linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,215,0,0.05))',
-            border: '1px solid rgba(255,215,0,0.2)', marginBottom: '16px',
-            boxShadow: '0 0 40px rgba(255,215,0,0.08)',
+            background: 'linear-gradient(135deg, rgba(254,241,4,0.15), rgba(254,241,4,0.05))',
+            border: '1px solid rgba(254,241,4,0.2)', marginBottom: '16px',
+            boxShadow: '0 0 40px rgba(254,241,4,0.08)',
           }}>
             <span style={{ fontSize: '28px' }}>🔧</span>
           </div>
@@ -159,7 +159,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: AuthUser) => void }) {
         </div>
 
         <div style={{
-          background: '#111', border: '1px solid #1e1e1e', borderRadius: '24px',
+          background: '#161616', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '24px',
           padding: '32px 28px', boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
         }}>
           <div style={{ color: '#fff', fontSize: '17px', fontWeight: 800, marginBottom: '6px' }}>Welcome back</div>
@@ -217,7 +217,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: AuthUser) => void }) {
             <button type="submit" disabled={loading} style={{
               marginTop: '8px', width: '100%', padding: '15px',
               borderRadius: '14px', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-              background: loading ? 'rgba(255,215,0,0.4)' : G,
+              background: loading ? 'rgba(254,241,4,0.4)' : G,
               color: '#000', fontSize: '15px', fontWeight: 900,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               transition: 'all 0.15s', fontFamily: 'inherit',
@@ -278,8 +278,8 @@ function JobCard({ job, now, onAction, busy, onRequestStop }: {
   const alertNow   = minsAway !== null && minsAway <= 0 && minsAway > -30 && isAssigned;
   const activePause = job.timer?.pauseLogs.find(p => !p.resumedAt);
 
-  const borderCol = isDone ? '#1a1a1a' : isOvertime ? '#7f1d1d' : isPaused ? '#78350f' : isRunning ? '#14532d' : alertNow ? '#7c2d12' : alertSoon ? '#713f12' : '#1e1e1e';
-  const bgCol     = isDone ? '#0d0d0d' : isOvertime ? 'rgba(239,68,68,0.04)' : isPaused ? 'rgba(234,179,8,0.04)' : isRunning ? 'rgba(34,197,94,0.04)' : '#111';
+  const borderCol = isDone ? 'rgba(255,255,255,0.04)' : isOvertime ? '#7f1d1d' : isPaused ? '#78350f' : isRunning ? '#14532d' : alertNow ? '#7c2d12' : alertSoon ? '#713f12' : 'rgba(255,255,255,0.07)';
+  const bgCol     = isDone ? '#0d0d0d' : isOvertime ? 'rgba(239,68,68,0.04)' : isPaused ? 'rgba(234,179,8,0.04)' : isRunning ? 'rgba(34,197,94,0.04)' : '#161616';
 
   const statusLabel = isDone ? (job.status === 'terminated' ? 'Terminated' : 'Done')
     : isOvertime ? 'Overtime' : isPaused ? 'Paused' : isRunning ? 'In Progress' : 'Assigned';
@@ -289,7 +289,7 @@ function JobCard({ job, now, onAction, busy, onRequestStop }: {
   return (
     <div style={{ background: bgCol, border: `1px solid ${borderCol}`, borderRadius: '20px', marginBottom: '14px', overflow: 'hidden', opacity: isDone ? 0.65 : 1, transition: 'all 0.2s' }}>
       {alertSoon && !alertNow && (
-        <div style={{ background: 'rgba(255,215,0,0.08)', borderBottom: '1px solid rgba(255,215,0,0.15)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ background: 'rgba(254,241,4,0.08)', borderBottom: '1px solid rgba(254,241,4,0.15)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>🔔</span>
           <span style={{ color: G, fontSize: '13px', fontWeight: 700 }}>Starting in {minsAway} min — get ready</span>
         </div>
@@ -305,7 +305,7 @@ function JobCard({ job, now, onAction, busy, onRequestStop }: {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ color: '#fff', fontSize: '17px', fontWeight: 900, lineHeight: 1.25 }}>{job.service}</div>
-            {job.bookingRef && <div style={{ color: 'rgba(255,215,0,0.4)', fontSize: '10px', fontFamily: 'monospace', marginTop: '3px' }}>{job.bookingRef}</div>}
+            {job.bookingRef && <div style={{ color: 'rgba(254,241,4,0.4)', fontSize: '10px', fontFamily: 'monospace', marginTop: '3px' }}>{job.bookingRef}</div>}
           </div>
           <span style={{ padding: '4px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: 800, flexShrink: 0, background: statusBg, color: statusColor, border: `1px solid ${statusColor}30` }}>
             {statusLabel}
@@ -412,7 +412,7 @@ function JobCard({ job, now, onAction, busy, onRequestStop }: {
         )}
 
         {(job.timer?.pauseLogs?.length ?? 0) > 0 && !showPause && (
-          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #1a1a1a' }}>
+          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <button onClick={() => setShowLog(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3a', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px', fontFamily: 'inherit' }}>
               {showLog ? '▲' : '▼'} {job.timer!.pauseLogs.length} pause{job.timer!.pauseLogs.length !== 1 ? 's' : ''}
             </button>
@@ -538,7 +538,7 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: '#111', border: '1px solid #1e1e1e', borderRadius: '24px 24px 0 0',
+        background: '#161616', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '24px 24px 0 0',
         padding: '0 0 env(safe-area-inset-bottom, 16px)', width: '100%', maxWidth: '600px',
         maxHeight: '88dvh', display: 'flex', flexDirection: 'column',
       }}>
@@ -554,7 +554,7 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
         </div>
 
         {/* Tab bar */}
-        <div style={{ display: 'flex', gap: '4px', margin: '16px 20px 0', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '4px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: '4px', margin: '16px 20px 0', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '4px', flexShrink: 0 }}>
           {(['request', 'mine', 'all'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
               flex: 1, padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer',
@@ -579,8 +579,8 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
                   <button key={t} onClick={() => selectType(t)} style={{
                     padding: '14px 12px', borderRadius: '14px', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700,
-                    background: type === t ? 'rgba(255,215,0,0.08)' : 'rgba(255,255,255,0.03)',
-                    border:     type === t ? '2px solid rgba(255,215,0,0.4)' : '2px solid #1e1e1e',
+                    background: type === t ? 'rgba(254,241,4,0.08)' : 'rgba(255,255,255,0.03)',
+                    border:     type === t ? '2px solid rgba(254,241,4,0.4)' : '2px solid rgba(255,255,255,0.07)',
                     color:      type === t ? G : '#555',
                     transition: 'all 0.15s', fontFamily: 'inherit',
                   }}>
@@ -593,7 +593,7 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
                 <div style={{ marginBottom: '14px' }}>
                   <label style={{ display: 'block', color: '#444', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '7px' }}>Date</label>
                   <input type="date" value={date} readOnly={type === 'Tomorrow Off'} onChange={e => setDate(e.target.value)} style={{
-                    width: '100%', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '12px',
+                    width: '100%', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px',
                     color: '#fff', padding: '11px 14px', fontSize: '14px', outline: 'none', boxSizing: 'border-box',
                   }} />
                   {type === 'Tomorrow Off' && <div style={{ color: '#333', fontSize: '11px', marginTop: '4px' }}>Auto-set to {fmtDate(tomorrowStr())}</div>}
@@ -607,7 +607,7 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
                 <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
                   placeholder={type === 'Break Request' ? 'e.g. Lunch break…' : type === 'Sick Leave' ? 'e.g. Fever…' : 'e.g. Family event…'}
                   style={{
-                    width: '100%', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '12px',
+                    width: '100%', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px',
                     color: '#fff', padding: '11px 14px', fontSize: '14px', outline: 'none', resize: 'none',
                     fontFamily: 'inherit', boxSizing: 'border-box',
                   }} />
@@ -621,7 +621,7 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
 
               <button onClick={submit} disabled={submitting} style={{
                 width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
-                background: submitting ? 'rgba(255,215,0,0.5)' : G,
+                background: submitting ? 'rgba(254,241,4,0.5)' : G,
                 color: '#000', fontSize: '15px', fontWeight: 900,
                 cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -646,7 +646,7 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
               : myLeaves.length === 0
               ? <div style={{ textAlign: 'center', padding: '48px 0', color: '#333', fontSize: '14px' }}>No requests yet</div>
               : myLeaves.map(r => (
-                <div key={r.id} style={{ background: '#171717', border: '1px solid #1e1e1e', borderRadius: '14px', padding: '13px 15px', marginBottom: '9px' }}>
+                <div key={r.id} style={{ background: '#171717', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '13px 15px', marginBottom: '9px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', color: '#fff', fontSize: '14px', fontWeight: 700 }}>
                       <span style={{ fontSize: '15px' }}>{typeIcons[r.type]}</span> {r.type}
@@ -667,10 +667,10 @@ function LeaveSheet({ user, onClose }: { user: AuthUser; onClose: () => void }) 
               : allLeaves.length === 0
               ? <div style={{ textAlign: 'center', padding: '48px 0', color: '#333', fontSize: '14px' }}>No leave records</div>
               : allLeaves.map(r => (
-                <div key={r.id} style={{ background: '#171717', border: '1px solid #1e1e1e', borderRadius: '14px', padding: '13px 15px', marginBottom: '9px' }}>
+                <div key={r.id} style={{ background: '#171717', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '13px 15px', marginBottom: '9px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: G, fontSize: '10px', fontWeight: 900, flexShrink: 0 }}>
+                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(254,241,4,0.08)', border: '1px solid rgba(254,241,4,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: G, fontSize: '10px', fontWeight: 900, flexShrink: 0 }}>
                         {r.staffName.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                       </div>
                       <div>
@@ -698,7 +698,7 @@ function StopModal({ jobId, onConfirm, onClose }: { jobId: string; onConfirm: (i
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 500, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '16px' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: '24px', padding: '24px', width: '100%', maxWidth: '480px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#161616', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '24px', padding: '24px', width: '100%', maxWidth: '480px' }}>
         <div style={{ width: '36px', height: '4px', background: '#2a2a2a', borderRadius: '2px', margin: '0 auto 20px' }} />
         <div style={{ color: '#fff', fontSize: '17px', fontWeight: 900, textAlign: 'center', marginBottom: '4px' }}>Stop this job?</div>
         <div style={{ color: '#444', fontSize: '13px', textAlign: 'center', marginBottom: '22px' }}>Choose a reason to continue</div>
@@ -711,7 +711,7 @@ function StopModal({ jobId, onConfirm, onClose }: { jobId: string; onConfirm: (i
               fontSize: '14px', fontWeight: 800, marginBottom: '9px', fontFamily: 'inherit',
               display: 'flex', alignItems: 'center', gap: '12px',
               background:  sel ? bg  : 'rgba(255,255,255,0.03)',
-              border:      sel ? `2px solid ${bd}` : '2px solid #1e1e1e',
+              border:      sel ? `2px solid ${bd}` : '2px solid rgba(255,255,255,0.07)',
               color:       sel ? col : '#555', transition: 'all 0.15s',
             }}>
               <span style={{ width: '18px', height: '18px', borderRadius: '50%', border: sel ? `2px solid ${col}` : '2px solid #2a2a2a', background: sel ? col : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', color: '#000', fontWeight: 900, flexShrink: 0, transition: 'all 0.15s' }}>
@@ -797,7 +797,7 @@ function ClockBar({ user, now }: { user: AuthUser; now: number }) {
   const statusDot   = status === 'active' ? '#4ade80' : status === 'on_break' ? '#fbbf24' : '#3a3a3a';
 
   return (
-    <div style={{ background: '#0d0d0d', borderBottom: '1px solid #161616', padding: '12px 16px' }}>
+    <div style={{ background: '#0d0d0d', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '12px 16px' }}>
       <div style={{ maxWidth: '640px', margin: '0 auto' }}>
 
         {/* Status row */}
@@ -853,7 +853,7 @@ function ClockBar({ user, now }: { user: AuthUser; now: number }) {
                 onClick={() => doAction('clock_out')}
                 style={{
                   padding: '13px 16px', borderRadius: '14px',
-                  border: '1px solid #1e1e1e', cursor: busy ? 'not-allowed' : 'pointer',
+                  border: '1px solid rgba(255,255,255,0.07)', cursor: busy ? 'not-allowed' : 'pointer',
                   background: '#111', color: '#555',
                   fontSize: '13px', fontWeight: 700,
                   fontFamily: 'inherit',
@@ -885,7 +885,7 @@ function ClockBar({ user, now }: { user: AuthUser; now: number }) {
                 onClick={() => doAction('clock_out')}
                 style={{
                   padding: '13px 16px', borderRadius: '14px',
-                  border: '1px solid #1e1e1e', cursor: busy ? 'not-allowed' : 'pointer',
+                  border: '1px solid rgba(255,255,255,0.07)', cursor: busy ? 'not-allowed' : 'pointer',
                   background: '#111', color: '#555',
                   fontSize: '13px', fontWeight: 700,
                   fontFamily: 'inherit',
@@ -981,15 +981,15 @@ function Dashboard({ user, onLogout, onShowLeaveExternal }: { user: AuthUser; on
   const initials   = user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#0a0a0a', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#fff' }}>
+    <div style={{ minHeight: '100dvh', background: '#0a0a0a', fontFamily: "Inter, system-ui, sans-serif", color: '#fff' }}>
       {stopJobId && <StopModal jobId={stopJobId} onConfirm={handleStopConfirm} onClose={() => setStopJobId(null)} />}
 
       {/* Header */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(12,12,12,0.95)', borderBottom: '1px solid #1a1a1a', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+      <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(13,13,13,0.97)', borderBottom: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
         <div style={{ maxWidth: '640px', margin: '0 auto', height: '62px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,215,0,0.1)', border: '2px solid rgba(255,215,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: G, fontWeight: 900, fontSize: '13px', letterSpacing: '0.02em' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(254,241,4,0.1)', border: '2px solid rgba(254,241,4,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: G, fontWeight: 900, fontSize: '13px', letterSpacing: '0.02em' }}>
                 {initials}
               </div>
               {hasAlert && <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '11px', height: '11px', borderRadius: '50%', background: '#f97316', border: '2px solid #0a0a0a', animation: 'pulse 1.5s infinite' }} />}
@@ -1001,14 +1001,14 @@ function Dashboard({ user, onLogout, onShowLeaveExternal }: { user: AuthUser; on
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <button onClick={fetchJobs} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #1e1e1e', borderRadius: '10px', cursor: 'pointer', color: '#555', padding: '8px 10px', fontSize: '14px' }}>🔄</button>
-            <button onClick={onLogout} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #1e1e1e', borderRadius: '10px', cursor: 'pointer', color: '#444', padding: '8px 10px', fontSize: '13px', fontFamily: 'inherit' }}>Exit</button>
+            <button onClick={fetchJobs} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', cursor: 'pointer', color: '#555', padding: '8px 10px', fontSize: '14px' }}>🔄</button>
+            <button onClick={onLogout} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', cursor: 'pointer', color: '#444', padding: '8px 10px', fontSize: '13px', fontFamily: 'inherit' }}>Exit</button>
           </div>
         </div>
       </header>
 
       {/* Date strip */}
-      <div style={{ background: '#0d0d0d', borderBottom: '1px solid #161616', padding: '8px 16px', textAlign: 'center' }}>
+      <div style={{ background: '#0d0d0d', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '8px 16px', textAlign: 'center' }}>
         <span style={{ color: '#333', fontSize: '12px', letterSpacing: '0.04em' }}>
           {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </span>
@@ -1018,7 +1018,7 @@ function Dashboard({ user, onLogout, onShowLeaveExternal }: { user: AuthUser; on
       <ClockBar user={user} now={now} />
 
       {/* Stats bar */}
-      <div style={{ background: '#0d0d0d', borderBottom: '1px solid #161616', padding: '10px 16px' }}>
+      <div style={{ background: '#0d0d0d', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '10px 16px' }}>
         <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', gap: '12px', justifyContent: 'center' }}>
           {[
             { label: 'Total',  value: jobs.length,        col: '#fff' },
@@ -1107,7 +1107,7 @@ export default function StaffPortal() {
 
   if (!user) return <LoginScreen onLogin={(u) => { saveAuth(u); }} />;
 
-  const FONT = "'DM Sans', system-ui, sans-serif";
+  const FONT = "Inter, system-ui, sans-serif";
   const TABS: { key: Tab; icon: string; label: string }[] = [
     { key: 'jobs',   icon: '🔧', label: 'Jobs' },
     { key: 'damage', icon: '🔍', label: 'Inspect' },
@@ -1131,7 +1131,7 @@ export default function StaffPortal() {
       {/* Bottom Tab Navigation */}
       <nav style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
-        background: 'rgba(8,8,8,0.97)', borderTop: '1px solid #1a1a1a',
+        background: 'rgba(13,13,13,0.97)', borderTop: '1px solid rgba(255,255,255,0.06)',
         backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
         display: 'flex', height: '64px',
         fontFamily: FONT,
